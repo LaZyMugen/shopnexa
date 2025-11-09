@@ -3,74 +3,35 @@ import supabase from "../config/supabaseClient.js";
 
 const router = express.Router();
 
-// Test Supabase JS client connection
+// Test Supabase JS client connection - lightweight check
 router.get("/", async (req, res) => {
   try {
-    // Test basic connection by querying a table
-    // Replace "users" with an actual table name in your database
-    const { data, error } = await supabase.from("users").select("*").limit(1);
-    
+    const { data, error } = await supabase.from("users").select("id").limit(1);
     if (error) {
-      return res.status(500).json({ 
-        success: false,
-        message: "Supabase connection test failed",
-        error: error.message,
-        hint: "Make sure SUPABASE_URL and SUPABASE_ANON_KEY are set in .env"
-      });
+      console.error("/api/test Supabase error:", error.message);
+      return res.status(500).json({ success: false, message: "Supabase connection test failed" });
     }
-    
-    res.json({ 
-      success: true,
-      message: "Supabase JS client connected successfully",
-      data,
-      tables: "Queried 'users' table"
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Supabase test error",
-      error: error.message
-    });
+    return res.json({ success: true, message: "Supabase client connected", data });
+  } catch (err) {
+    console.error("/api/test unexpected error:", err);
+    return res.status(500).json({ success: false, message: "Supabase test error" });
   }
 });
 
-// Test Supabase connection with a simple query
+// Ping endpoint — simple lightweight server reachability test
 router.get("/ping", async (req, res) => {
   try {
-    // Simple test query that works on any Supabase instance
-    const { data, error } = await supabase.rpc('version');
-    
+    // Try a minimal query instead of relying on optional RPCs
+    const { data, error } = await supabase.from("users").select("id").limit(1);
     if (error) {
-      // If RPC doesn't exist, try a different approach
-      const { data: authData, error: authError } = await supabase.auth.getSession();
-      
-      if (authError && authError.message.includes('Invalid API key')) {
-        return res.status(500).json({
-          success: false,
-          message: "Invalid Supabase credentials",
-          error: "Check your SUPABASE_URL and SUPABASE_ANON_KEY in .env"
-        });
-      }
-      
-      // If we can reach Supabase, connection is good
-      res.json({
-        success: true,
-        message: "Supabase connection is working",
-        note: "Using auth endpoint to verify connection"
-      });
-    } else {
-      res.json({
-        success: true,
-        message: "Supabase connection is working",
-        data
-      });
+      // If Supabase auth/public API is reachable but table doesn't exist, still return reachable
+      console.warn("/api/test/ping warning (table query failed):", error.message);
+      return res.json({ success: true, message: "Supabase reachable (query failed)", hint: error.message });
     }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Supabase connection test failed",
-      error: error.message
-    });
+    return res.json({ success: true, message: "Supabase reachable", data });
+  } catch (err) {
+    console.error("/api/test/ping error:", err);
+    return res.status(500).json({ success: false, message: "Supabase connection test failed" });
   }
 });
 

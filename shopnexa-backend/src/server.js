@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import router from "./routes/index.js";
 import testRoute from "./routes/testSupabase.js";
-import { testConnection } from "../config/db.js";
+import pool, { testConnection } from "../config/db.js";
 
 dotenv.config();
 const app = express();
@@ -56,16 +56,47 @@ app.listen(PORT, async () => {
   console.log(` Health check: http://localhost:${PORT}/health`);
   console.log(` DB test: http://localhost:${PORT}/api/test/db`);
   
-  // Test database connection on startup
-  console.log("\n🔍 Testing database connection...");
-  const dbTest = await testConnection();
-  if (dbTest.success) {
-    console.log("✅ Database connection: SUCCESS");
-    console.log(`   Current time: ${dbTest.data.currentTime}`);
-    console.log(`   PostgreSQL: ${dbTest.data.postgresVersion}`);
-  } else {
-    console.log("❌ Database connection: FAILED");
-    console.log(`   Error: ${dbTest.error}`);
-    console.log("   ⚠️  Make sure DATABASE_URL or SUPABASE_DB_URL is set in .env");
+  // Test database connection on startup (fail-fast handled inside testConnection)
+  try {
+    console.log("\n🔍 Testing database connection...");
+    const dbTest = await testConnection();
+    if (dbTest.success) {
+      console.log(" Database connection: SUCCESS");
+      console.log(`   Current time: ${dbTest.data.currentTime}`);
+      console.log(`   PostgreSQL: ${dbTest.data.postgresVersion}`);
+    } else {
+      console.log(" Database connection: FAILED");
+      console.log(`   Error: ${dbTest.error}`);
+      console.log("   ⚠️  Make sure DATABASE_URL or SUPABASE_DB_URL is set in .env");
+    }
+  } catch (err) {
+    console.error("Unexpected error when testing DB connection:", err?.message || err);
   }
+});
+
+// Graceful shutdown handlers
+const shutdown = async (signal) => {
+  console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+  try {
+    if (pool && typeof pool.end === "function") {
+      await pool.end();
+      console.log("Database pool closed.");
+    }
+  } catch (err) {
+    console.error("Error during pool shutdown:", err?.message || err);
+  } finally {
+    process.exit(0);
+  }
+};
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection at:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+  process.exit(1);
 });

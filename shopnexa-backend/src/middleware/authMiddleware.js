@@ -14,6 +14,8 @@ export default async function authMiddleware(req, res, next) {
     // Verify token with Supabase
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user) {
+      // Hint to clients that they need to authenticate
+      res.set("WWW-Authenticate", 'Bearer realm="Access to protected resource"');
       return res.status(401).json({ error: "Invalid or expired token" });
     }
 
