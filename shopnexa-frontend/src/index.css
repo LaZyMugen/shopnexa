@@ -1,3 +1,69 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Arapey:ital,wght@0,400;0,700;1,400;1,700&family=Old+Standard+TT:wght@400;700&display=swap');
+
+:root{
+  --glass-bg: rgba(255,255,255,0.45);
+  --glass-border: rgba(255,255,255,0.12);
+}
+
+/* Glassmorphism helpers (paste near top) */
+:root {
+  --glass-bg: rgba(255,255,255,0.5);
+  --glass-border: rgba(255,255,255,0.12);
+}
+
+/* Theme variables */
+:root {
+  --app-bg: #ffffff;
+  --text-color: #0f172a; /* slate-900 */
+  --accent-from: #d946ef; /* fuchsia-600 */
+  --accent-to: #ec4899;   /* pink-500 */
+}
+
+.theme-light {
+  --app-bg: #ffffff;
+  --text-color: #0f172a;
+  --accent-from: #d946ef;
+  --accent-to: #ec4899;
+}
+
+.theme-dark {
+  /* Console/DevTools-like deep neutral */
+  --app-bg: #0f1115;
+  --text-color: #e5e7eb;
+  --accent-from: #7c3aed; /* violet-600 */
+  --accent-to: #db2777;   /* rose-600 */
+}
+
+/* remove glass theme, only light and dark */
+
+/* small motion */
+@keyframes subtleRise {
+  from { transform: translateY(6px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-subtleRise { animation: subtleRise .36s ease-out both; }
+
+/* ensure backdrop filter works */
+.backdrop-blur-md { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+/* Full height for root */
+html,body,#root { height: 100%; }
+
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: var(--app-bg);
+}
+
+/* small utility for fade-in if you want to use */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeUp { animation: fadeInUp .32s ease-out both; }
+
+
+
 /* stylelint-disable-next-line at-rule-no-unknown */
 @tailwind base;
 /* stylelint-disable-next-line at-rule-no-unknown */
@@ -8,4 +74,263 @@
 /* Optional custom global styles */
 body {
   @apply bg-gray-50 text-gray-900;
+  font-family: 'Inter', sans-serif; /* Ensure a sleek and modern font */
 }
+
+/* Theme body overrides */
+html.theme-light body { background: var(--app-bg); color: var(--text-color); }
+html.theme-dark body { background: var(--app-bg); color: var(--text-color); }
+html.theme-glass body { background: var(--app-bg); color: var(--text-color); }
+
+/* Scoped white text ONLY inside storefront while in dark theme */
+.theme-dark .storefront-page { color: #ffffff; }
+.theme-dark .storefront-page .text-slate-900,
+.theme-dark .storefront-page .text-slate-800,
+.theme-dark .storefront-page .text-slate-700,
+.theme-dark .storefront-page .text-slate-600,
+.theme-dark .storefront-page .text-slate-500,
+.theme-dark .storefront-page .text-gray-900,
+.theme-dark .storefront-page .text-gray-800,
+.theme-dark .storefront-page .text-gray-700,
+.theme-dark .storefront-page .text-gray-600,
+.theme-dark .storefront-page .text-gray-500,
+.theme-dark .storefront-page .text-slate-900\/90,
+.theme-dark .storefront-page .text-slate-800\/90,
+.theme-dark .storefront-page .text-slate-700\/80,
+.theme-dark .storefront-page .text-slate-600\/80,
+.theme-dark .storefront-page .text-slate-500\/70 {
+  color: #ffffff !important;
+}
+
+/* Force strong readable black text on Profile page only when light theme is active */
+.theme-light .profile-page { color: #0f172a; }
+.theme-light .profile-page .text-slate-900,
+.theme-light .profile-page .text-slate-800,
+.theme-light .profile-page .text-slate-700,
+.theme-light .profile-page .text-slate-600,
+.theme-light .profile-page .text-gray-900,
+.theme-light .profile-page .text-gray-800,
+.theme-light .profile-page .text-gray-700 {
+  color: #0f172a !important;
+}
+
+/* Auth hero gradient (blue-purple glow) */
+.auth-hero-bg {
+  background-image:
+    radial-gradient(circle at 20% 5%, rgba(64, 152, 255, 0.85), rgba(3, 10, 30, 0.5) 45%, transparent 60%),
+    radial-gradient(circle at 80% 85%, rgba(194, 75, 255, 0.9), rgba(5, 9, 28, 0.45) 55%, transparent 70%),
+    linear-gradient(135deg, #03081e 0%, #05163c 45%, #1b0d4a 70%, #340a59 85%, #4b0a6d 100%);
+  background-color: #03081e;
+}
+
+/* Pastel multi-color gradient for profile page (light) */
+.profile-gradient-light {
+  background-image:
+    linear-gradient(115deg, #dff7fb 0%, #e9fbff 8%, #fff8d6 36%, #ffeaf7 62%, #ffd9f2 78%, #f8c1e3 100%),
+    radial-gradient(circle at 30% 35%, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 60%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 1px, transparent 1px, transparent 3px);
+  background-blend-mode: normal, lighten, overlay;
+}
+
+/* Dark fallback subtle gradient */
+.profile-gradient-dark {
+  background-image:
+    linear-gradient(140deg, #15171c 0%, #1c1e24 40%, #20232b 70%),
+    radial-gradient(circle at 25% 30%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 55%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 4px);
+  background-blend-mode: normal, lighten, overlay;
+}
+
+/* Immersive landing page visuals */
+.landing-page {
+  background-color: #04030d;
+  color: #ffffff;
+}
+
+/* When contact section is visible, force the landing container to a white background
+   and hide decorative aurora/nebula elements so the white panel appears continuous. */
+.landing-page.contact-visible {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.landing-page.contact-visible .landing-aurora,
+.landing-page.contact-visible .landing-nebula {
+  display: none !important;
+}
+
+.landing-aurora {
+  position: absolute;
+  width: 55vw;
+  height: 55vw;
+  background: radial-gradient(circle at 30% 30%, rgba(75, 142, 255, 0.75), rgba(4, 12, 32, 0.2) 55%);
+  filter: blur(140px);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.landing-aurora--right {
+  left: auto;
+  right: -15%;
+  top: auto;
+  bottom: -10%;
+  background: radial-gradient(circle at 60% 40%, rgba(208, 93, 255, 0.85), rgba(7, 6, 22, 0.3) 60%);
+}
+
+.landing-nebula {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(132, 115, 255, 0.08), rgba(255, 121, 198, 0.05));
+  mix-blend-mode: screen;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.landing-orbit {
+  position: relative;
+  width: min(32rem, 80vw);
+  height: min(32rem, 80vw);
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.1), transparent 45%);
+}
+
+.landing-orbit span {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(138, 180, 255, 0.2);
+  animation: orbitPulse 6s ease-in-out infinite;
+}
+
+.landing-orbit span:nth-child(2) { inset: 1.4rem; border-color: rgba(168, 126, 255, 0.35); animation-delay: .6s; }
+.landing-orbit span:nth-child(3) { inset: 2.8rem; border-color: rgba(255, 99, 234, 0.35); animation-delay: 1.2s; }
+.landing-orbit span:nth-child(4) { inset: 4.2rem; border-color: rgba(255, 255, 255, 0.2); animation-delay: 1.8s; }
+.landing-orbit span:nth-child(5) { inset: 5.6rem; border-color: rgba(120, 198, 255, 0.25); animation-delay: 2.4s; }
+
+@keyframes orbitPulse {
+  0% { transform: scale(0.98); opacity: 0.4; }
+  50% { transform: scale(1.02); opacity: 0.85; }
+  100% { transform: scale(0.98); opacity: 0.4; }
+}
+
+.landing-badge {
+  border-radius: 9999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255,255,255,0.75);
+}
+
+.landing-logo {
+  width: clamp(240px, 27vw, 360px);
+  filter: drop-shadow(0 10px 30px rgba(236, 72, 153, 0.55));
+}
+
+@keyframes heroFadeIn {
+  0% { opacity: 0; transform: translateY(18px); }
+  60% { opacity: 0.85; }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Slower, more cinematic entrance */
+.hero-fade-1 { animation: heroFadeIn 2.4s cubic-bezier(0.16,0.72,0.25,1) forwards; animation-delay: 0.25s; opacity: 0; }
+.hero-fade-2 { animation: heroFadeIn 2.4s cubic-bezier(0.16,0.72,0.25,1) forwards; animation-delay: 0.95s; opacity: 0; }
+
+/* About section reveal */
+.about-visible { opacity: 1 !important; }
+
+@keyframes aboutFade {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-about-1 { animation: aboutFade 2.2s cubic-bezier(.16,.72,.25,1) forwards; }
+.animate-about-2 { animation: aboutFade 2s cubic-bezier(.16,.72,.25,1) forwards; }
+.animate-about-3 { animation: aboutFade 2s cubic-bezier(.16,.72,.25,1) forwards; }
+
+/* faster reveal used for small contact items */
+.animate-about-fast { animation: aboutFade 0.45s cubic-bezier(.16,.72,.25,1) forwards; }
+
+/* Bell jingle animation for notifications */
+@keyframes bellJingle {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(15deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-4deg); }
+  100% { transform: rotate(0deg); }
+}
+.animate-bell-jingle {
+  animation: bellJingle 0.6s ease-in-out both;
+  transform-origin: top center;
+}
+
+.about-heading {
+  font-family: 'Old Standard TT', 'Times New Roman', serif;
+  /* Reduced to better match contact heading size */
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.about-paragraph {
+  font-family: 'Arapey', 'Georgia', serif;
+  font-size: 1rem;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
+/* Compact section heading used for About and Contact under the logo */
+.section-heading-small {
+  font-family: 'Old Standard TT', 'Times New Roman', serif;
+  /* increased size so About and Contact are more prominent */
+  font-size: clamp(3.25rem, 3.2vw, 2rem); /* ~20px - 32px depending on viewport */
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+@media (min-width: 1024px) {
+  .about-paragraph {
+    font-size: 1.125rem;
+  }
+}
+
+/* Ensure product card text is dark in light mode but white in dark mode */
+.product-card .font-semibold { color: var(--text-color) !important; }
+.product-card .text-sm { color: rgba(15,23,42,0.8) !important; }
+.theme-dark .product-card .font-semibold { color: #ffffff !important; }
+.theme-dark .product-card .text-sm { color: #ffffff !important; }
+
+/* Remove gray inner highlight on product cards in dark theme */
+.theme-dark .inner-reflection { display: none !important; }
+
+/* Dark theme search input as black bar */
+.theme-dark .search-input {
+  background: #0b0e12 !important; /* near black */
+  color: #ffffff !important;
+  border-color: rgba(255,255,255,0.18) !important;
+}
+.theme-dark .search-input::placeholder {
+  color: rgba(255,255,255,0.55) !important;
+}
+
+/* Butler font utility */
+.font-butler {
+  font-family: 'Butler', serif;
+}
+
+/* Removed unused legacy sidebar utility classes */
+
+/* Fade-in animation for global use */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Removed unused legacy sidebar hover effects */

@@ -1,17 +1,19 @@
 import express from "express";
 import authMiddleware from "../middleware/authMiddleware.js";
+import { createOrder, listOrders, getOrder, updateOrderStatus } from "../controllers/orderController.js";
+
 const router = express.Router();
 
-// Protected: only logged-in users
-router.post("/", authMiddleware, async (req, res) => {
-  // Example: create an order for req.user.id
-  const user = req.user;
-  // ...business logic (call Supabase or DB)
-  res.json({ message: "Order received", userId: user.id });
-});
+// Create order (authenticated)
+router.post("/", authMiddleware, createOrder);
 
-router.get("/", (req, res) => {
-    res.json({ message: "Orders route working" });
-  });
-  
+// List orders (authenticated - could be admin scoped later)
+router.get("/", authMiddleware, listOrders);
+
+// Get single order
+router.get("/:id", authMiddleware, getOrder);
+
+// Update status
+router.put("/:id/status", authMiddleware, updateOrderStatus);
+
 export default router;

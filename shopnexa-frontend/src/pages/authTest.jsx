@@ -12,9 +12,8 @@ export default function AuthTest() {
     setError("");
     setSuccess("");
     try {
-      const res = await signup(email, password);
-      console.log("Signup success:", res);
-      setSuccess("Signup successful! Check console for details.");
+  await signup(email, password);
+      setSuccess("Signup successful!");
     } catch (err) {
       const errorMsg = err.response?.data?.error || err.message || "Signup failed";
       setError(errorMsg);
@@ -26,9 +25,8 @@ export default function AuthTest() {
     setError("");
     setSuccess("");
     try {
-      const res = await login(email, password);
-      console.log("Login success:", res);
-      setSuccess("Login successful! Check console for details.");
+  await login(email, password);
+      setSuccess("Login successful!");
     } catch (err) {
       const errorMsg = err.response?.data?.error || err.message || "Login failed";
       setError(errorMsg);

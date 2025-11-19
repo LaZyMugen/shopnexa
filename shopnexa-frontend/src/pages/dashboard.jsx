@@ -1,34 +1,11 @@
-import { useAuth } from "../context/authContext";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-function Dashboard() {
-  const { user, logout } = useAuth();
+// Deprecated: dashboard now replaced by AdminDashboard (/admin)
+export default function DashboardRedirect() {
   const navigate = useNavigate();
-
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
-
-  return (
-    <div className="h-screen flex flex-col items-center justify-center bg-white">
-      <h1 className="text-4xl font-bold text-gray-800 mb-4">
-        Welcome to Dashboard
-      </h1>
-      {user && (
-        <p className="text-gray-600 mb-4">
-          Logged in as: {user.email || user.id}
-        </p>
-      )}
-      <button
-        onClick={handleLogout}
-        className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-      >
-        Logout
-      </button>
-    </div>
-  );
+  useEffect(() => {
+  navigate("/landing", { replace: true });
+  }, [navigate]);
+  return null;
 }
-
-export default Dashboard;
-  

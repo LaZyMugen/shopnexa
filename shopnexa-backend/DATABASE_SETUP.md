@@ -2,60 +2,63 @@
 
 ## Supabase Database Connection
 
-This project supports two methods to connect to Supabase:
+This project supports two ways to talk to your Supabase database:
 
-### Method 1: Supabase JS Client (Recommended - Already Configured)
-- Uses: `@supabase/supabase-js`
-- Configuration: `src/config/supabaseClient.js`
-- Environment variables needed:
+### Option A: Supabase JS Client (recommended)
+- Library: `@supabase/supabase-js`
+- Config: `src/config/supabaseClient.js`
+- Required env vars in backend `.env`:
   ```
   SUPABASE_URL=your-project-url
-  SUPABASE_ANON_KEY=your-anon-key
+  # Prefer on server:
+  SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+  # Fallback if you don't have service role:
+  # SUPABASE_ANON_KEY=your-anon-key
   ```
-- Test endpoint: `GET /api/test` or `GET /api/test/ping`
+- Health endpoint: `GET /api/health/supabase`
 
-### Method 2: Direct PostgreSQL Connection (Optional)
-- Uses: `pg` (PostgreSQL client)
-- Configuration: `config/db.js`
-- Environment variables needed:
+### Option B: Direct PostgreSQL connection (optional)
+- Library: `pg`
+- Config: `config/db.js`
+- Required env vars in backend `.env` (use one):
   ```
-  DATABASE_URL=postgresql://postgres:[PASSWORD]@[PROJECT-REF].supabase.co:6543/postgres?pgbouncer=true
+  DATABASE_URL=postgresql://postgres:[PASSWORD]@[PROJECT-REF].supabase.co:5432/postgres
   # OR
-  SUPABASE_DB_URL=postgresql://postgres:[PASSWORD]@[PROJECT-REF].supabase.co:6543/postgres?pgbouncer=true
+  SUPABASE_DB_URL=postgresql://postgres:[PASSWORD]@[PROJECT-REF].supabase.co:5432/postgres
   ```
-- Test endpoint: `GET /api/test/db`
+  Notes:
+  - SSL is required and already enabled in `config/db.js`.
+  - If you prefer connection pooling (pgbouncer), use the pooling port from Supabase (often 6543) and append `?pgbouncer=true`.
+- Health endpoint: `GET /api/health/db`
 
-## Getting Connection String
+## Getting your connection string
 
-1. Go to Supabase Dashboard
-2. Navigate to **Settings** → **Database**
-3. Under **Connection Pooling**, copy the **Connection string** (use port 6543)
-4. Replace `[PASSWORD]` with your database password
-5. Add it to your `.env` file as `DATABASE_URL` or `SUPABASE_DB_URL`
+1. Open your Supabase project
+2. Go to Settings → Database
+3. Copy the connection string (direct 5432, or pooling 6543)
+4. Replace `[PASSWORD]` with the database password shown in the dashboard
+5. Put it into `.env` as `DATABASE_URL` or `SUPABASE_DB_URL`
 
-## Testing Connection
+## Health checks and demo seeding
 
-### Test Supabase JS Client:
 ```bash
-curl http://localhost:5000/api/test
-# or
-curl http://localhost:5000/api/test/ping
-```
+# Liveness
+GET http://localhost:5000/api/health
 
-### Test Direct PostgreSQL Connection:
-```bash
-curl http://localhost:5000/api/test/db
-```
+# Direct Postgres connectivity
+GET http://localhost:5000/api/health/db
 
-### Health Check:
-```bash
-curl http://localhost:5000/health
+# Supabase client check (safe)
+GET http://localhost:5000/api/health/supabase
+
+# Seed minimal demo data (categories/products)
+POST http://localhost:5000/api/demo/seed
 ```
 
 ## Notes
 
-- **Supabase JS Client** is recommended for most use cases as it handles authentication and RLS (Row Level Security)
-- **Direct PostgreSQL** connection is useful for complex queries or when you need raw SQL
-- The server will automatically test the database connection on startup
-- Connection pooling is enabled by default (max 20 connections)
+- Supabase JS Client is recommended for auth-aware access and RLS.
+- Direct PostgreSQL is useful for raw SQL and seeding scripts.
+- `config/db.js` enables SSL and provides user-friendly error messages.
+- If `SUPABASE_SERVICE_ROLE_KEY` is set, the `/api/users` route can list auth users via admin API; otherwise it will look for a public `users` table.
 

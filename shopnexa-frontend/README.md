@@ -1,3 +1,13 @@
+# ShopNexa Frontend (React + Vite)
+
+This is the ShopNexa frontend built with React, Vite, TailwindCSS, and react-router.
+
+Project-specific notes:
+- Configure the API base URL via `VITE_API_URL` (see `.env.example`).
+- Tailwind directives in `src/index.css` (e.g., `@tailwind`, `@apply`) may show warnings in some IDEs — these are expected and compile correctly with Vite.
+
+---
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
