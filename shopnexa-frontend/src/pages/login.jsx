@@ -23,7 +23,7 @@ function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, _setSuccess] = useState("");
-  const { login, loading, simulateLogin } = useAuth();
+  const { login, loading, simulateLogin, user: authUser } = useAuth();
   const navigate = useNavigate();
 
   // Demo forgot-password modal states
@@ -60,8 +60,28 @@ function Login() {
     e.preventDefault();
     setError("");
     try {
-  await login(email, password);
-  navigate("/landing");
+      const res = await login(email, password);
+      // determine the logged in user object
+      const u = (res && (res.user || res)) || authUser;
+
+      // If retailer/wholesaler, check if onboarding profile exists and is complete
+      if (u && (u.role === 'retailer' || u.role === 'wholesaler')) {
+        try {
+          const all = JSON.parse(localStorage.getItem('retailer_profiles') || '[]');
+          const profile = all.find(p => p.retailerId === u.id);
+          const needsOnboarding = !profile || !profile.businessName || !profile.address || !profile.pincode || !profile.categories || profile.categories.length === 0;
+          if (needsOnboarding) {
+            navigate('/onboarding');
+            return;
+          }
+        } catch (e) {
+          // If any error reading localStorage, fall back to onboarding
+          navigate('/onboarding');
+          return;
+        }
+      }
+
+      navigate('/landing');
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Login failed");
       console.error("Login error:", err.response?.data || err.message);
@@ -137,7 +157,10 @@ function Login() {
               const demoUser = { email: payload?.email, name, google_sub: payload?.sub, picture: payload?.picture };
               try { simulateLogin(demoUser); } catch (e) { console.warn('simulateLogin failed', e); }
               setToast(`Signed in with Google as ${name}`);
-              navigate('/landing');
+              // If the Google-identified user has a retailer/wholesaler role, send to onboarding
+              const gRole = demoUser.role || res.data?.user?.role;
+              if (gRole === 'retailer' || gRole === 'wholesaler') navigate('/onboarding');
+              else navigate('/landing');
             } else {
               setToast('Google verification failed on server');
             }

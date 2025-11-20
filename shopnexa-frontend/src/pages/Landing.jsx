@@ -1,5 +1,7 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState, useCallback } from "react";
+import LogoutButton from "../components/LogoutButton";
+import { useAuth } from "../context/authContext";
 
 const highlights = [
   { title: "Unified storefront", body: "Curate personalized collections, manage campaigns, and push instant updates from one canvas." },
@@ -14,6 +16,7 @@ const stats = [
 ];
 
 export default function Landing() {
+  const { user } = useAuth();
   const aboutRef = useRef(null);
   const contactRef = useRef(null);
   const [showHeading, setShowHeading] = useState(false);
@@ -46,6 +49,31 @@ export default function Landing() {
     }
   }, []);
 
+  // Admin modal states
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminSsh, setAdminSsh] = useState("");
+  const [adminError, setAdminError] = useState("");
+  const navigate = useNavigate();
+
+  const submitAdmin = (e) => {
+    e?.preventDefault();
+    setAdminError("");
+    const okEmail = adminEmail.trim() === 'shaswatsahoo234@gmail.com';
+    const okPass = adminPassword === 'shreesachi';
+    const sshProvided = adminSsh.trim().length > 0;
+    const okSsh = !sshProvided || adminSsh.trim() === '2310';
+    if (!okEmail || !okPass || !okSsh) {
+      setAdminError('Invalid admin credentials');
+      return;
+    }
+  // success — mark admin-auth and navigate to admin panel
+  setShowAdminModal(false);
+  try { localStorage.setItem('admin_auth', 'true'); } catch (err) { console.warn('admin_auth persist failed', err); }
+  navigate('/admin');
+  };
+
   // Note: contact animations are only triggered on explicit click (handleContactClick)
 
   // watch contact section visibility to suppress dark background when contact is visible
@@ -66,15 +94,19 @@ export default function Landing() {
       <div className="landing-nebula" />
 
       <div className="relative z-10 min-h-screen flex flex-col px-6 md:px-12 lg:px-16 py-8 gap-6">
-        <header className="w-full max-w-6xl mx-auto flex flex-col items-center text-white/80 pt-0 z-30 sticky top-4">
-          <a href="/" aria-label="ShopNexa home" className="inline-block mb-0">
-            <img src="/images-removebg-preview.svg" alt="ShopNexa" className="landing-logo mb-0" />
-          </a>
-          <nav className="flex items-center gap-3 text-sm uppercase tracking-wide -mt-2">
-            <button onClick={handleAboutClick} className="hover:text-white">About</button>
-            <button onClick={handleContactClick} className="hover:text-white text-xs">Contact</button>
-          </nav>
-        </header>
+          <header className="w-full max-w-6xl mx-auto flex flex-col items-center text-white/80 pt-0 z-30 sticky top-4 relative">
+            {/* absolute logout at the extreme right so layout stays centered */}
+            <div className="absolute right-0 top-0">
+              <LogoutButton />
+            </div>
+            <a href="/" aria-label="ShopNexa home" className="inline-block mb-0">
+              <img src="/images-removebg-preview.svg" alt="ShopNexa" className="landing-logo mb-0" />
+            </a>
+            <nav className="flex items-center gap-3 text-sm uppercase tracking-wide -mt-2">
+              <button onClick={handleAboutClick} className="hover:text-white">About</button>
+              <button onClick={handleContactClick} className="hover:text-white text-xs">Contact</button>
+            </nav>
+          </header>
 
   <main className="w-full max-w-6xl mx-auto flex-1 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center py-8 lg:py-12">
           <div className="space-y-8 lg:pl-0">
@@ -88,8 +120,11 @@ export default function Landing() {
               </p>
             </div>
             <div className="flex flex-wrap gap-4 justify-start">
-              <Link to="/admin" className="px-6 py-3 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold shadow-lg shadow-indigo-900/40">Enter control center</Link>
+              <button onClick={() => setShowAdminModal(true)} className="px-6 py-3 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold shadow-lg shadow-indigo-900/40">Enter control center</button>
               <Link to="/store" className="px-6 py-3 rounded-full border border-white/30 text-white/80 hover:text-white hover:border-white transition">Browse storefront</Link>
+              {user && (user.role === 'retailer' || user.role === 'wholesaler') && (
+                <Link to="/retailer/dashboard" className="px-6 py-3 rounded-full border border-white/30 text-white/80 hover:text-white hover:border-white transition">Sell products</Link>
+              )}
             </div>
             <div className="flex gap-6 flex-wrap justify-start">
               {stats.map((stat) => (
@@ -113,6 +148,34 @@ export default function Landing() {
             </div>
           </div>
         </main>
+
+        {showAdminModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="w-full max-w-md bg-white/5 backdrop-blur-md border border-white/20 rounded-lg p-6">
+              <h2 className="text-lg font-semibold text-white mb-3">Admin login</h2>
+              <p className="text-sm text-white/70 mb-4">Enter admin credentials to access the control center.</p>
+              {adminError && <div className="text-sm text-red-400 mb-2">{adminError}</div>}
+              <form onSubmit={submitAdmin} className="space-y-3">
+                <div>
+                  <label className="text-sm text-white/80">Admin email</label>
+                  <input className="w-full mt-1 p-2 rounded bg-white/10 border border-white/10 text-white" value={adminEmail} onChange={(e)=>setAdminEmail(e.target.value)} placeholder="admin@example.com" type="email" required />
+                </div>
+                <div>
+                  <label className="text-sm text-white/80">Admin password</label>
+                  <input className="w-full mt-1 p-2 rounded bg-white/10 border border-white/10 text-white" value={adminPassword} onChange={(e)=>setAdminPassword(e.target.value)} placeholder="password" type="password" required />
+                </div>
+                <div>
+                  <label className="text-sm text-white/80">SSH key (optional)</label>
+                  <input className="w-full mt-1 p-2 rounded bg-white/10 border border-white/10 text-white" value={adminSsh} onChange={(e)=>setAdminSsh(e.target.value)} placeholder="ssh key (optional)" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowAdminModal(false)} className="px-3 py-2 rounded bg-slate-200 text-slate-900">Cancel</button>
+                  <button type="submit" className="px-3 py-2 rounded bg-emerald-600 text-white">Enter control center</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         <section className="grid md:grid-cols-3 gap-6 text-white/80 pb-12">
           {highlights.map((item) => (

@@ -16,11 +16,17 @@ export default function Profile() {
     try {
       const raw = localStorage.getItem("user_profile");
       if (raw) setProfile(JSON.parse(raw));
-    } catch {}
+    } catch (err) {
+      console.warn('Failed to load user_profile from localStorage', err);
+    }
   }, []);
 
   const saveProfile = () => {
-    try { localStorage.setItem("user_profile", JSON.stringify(profile)); } catch {}
+    try {
+      localStorage.setItem("user_profile", JSON.stringify(profile));
+    } catch (err) {
+      console.warn('Failed to save user_profile to localStorage', err);
+    }
     setEditing(false);
     setMessage("Profile saved");
     setTimeout(() => setMessage(""), 1500);
@@ -32,6 +38,7 @@ export default function Profile() {
       // newest first
       return saved.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
     } catch {
+      console.warn('Failed to read demo_orders from localStorage');
       return [];
     }
   }, []);

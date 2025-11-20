@@ -5,7 +5,7 @@ import { estimateDays } from "../data/retailers";
 import api from "../api/axios";
 
 export default function Checkout() {
-  const { items, totals, groups, updateQty, removeItem, clearCart } = useCart();
+  const { items, groups, updateQty, removeItem, clearCart } = useCart();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -55,7 +55,7 @@ export default function Checkout() {
         const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
         all.push({ id: orderId, items, totals: payload.totals, estimatedDays: payload.estimatedDays, created: new Date().toISOString() });
         localStorage.setItem('order_summaries', JSON.stringify(all));
-      } catch {}
+      } catch (err) { console.warn('saving order_summaries failed', err); }
   // Navigate immediately to avoid empty-cart flash; clear cart after navigation (microtask)
   navigate(`/order-summary/${orderId}`);
   setTimeout(() => { clearCart(); }, 0);
@@ -72,10 +72,11 @@ export default function Checkout() {
           const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
           all.push({ id: fallbackId, items, totals: payload.totals, estimatedDays: computed.estimatedDays, created: new Date().toISOString() });
           localStorage.setItem('order_summaries', JSON.stringify(all));
-        } catch {}
-  navigate(`/order-summary/${fallbackId}`);
-  setTimeout(() => { clearCart(); }, 0);
-      } catch (e) {
+        } catch (err) { console.warn('saving order_summaries failed', err); }
+        navigate(`/order-summary/${fallbackId}`);
+        setTimeout(() => { clearCart(); }, 0);
+      } catch (err) {
+        console.warn('fallback place order failed', err);
         setMessage('Failed to place order.');
       }
     } finally {

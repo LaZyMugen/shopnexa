@@ -5,7 +5,7 @@ import api from "../api/axios";
 
 function Signup() {
   const [email, setEmail] = useState("");
-  
+  const [role, setRole] = useState('customer');
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -16,7 +16,10 @@ function Signup() {
   // Redirect to dashboard if user is logged in (after successful signup)
   useEffect(() => {
     if (user) {
-  navigate("/landing");
+      // Redirect based on role for demo flows
+      const r = user.role || user?.role || 'customer';
+      if (r === 'retailer' || r === 'wholesaler') navigate('/onboarding');
+      else navigate('/landing');
     }
   }, [user, navigate]);
 
@@ -26,18 +29,15 @@ function Signup() {
     setSuccess("");
     
     try {
-      const result = await signup(email, password);
-      
-      // Check if we got a session (auto-login)
-      if (result?.session?.access_token) {
-        // Auto-logged in - useEffect will handle redirect when user state updates
-  setSuccess("Signup successful! Redirecting to admin...");
+      const result = await signup(email, password, role);
+      // If backend returned a token or demo signup succeeded, redirect is handled by useEffect
+      if (result?.demo) {
+        setSuccess('Demo account created. Redirecting...');
+      } else if (result?.session?.access_token) {
+        setSuccess('Signup successful! Redirecting...');
       } else {
-        // No session - email confirmation likely required
-        setSuccess("Signup successful! Please check your email to confirm your account, then login.");
-        setTimeout(() => {
-          navigate("/login");
-        }, 3000);
+        setSuccess('Signup successful! Please check your email to confirm your account, then login.');
+        setTimeout(() => navigate('/login'), 3000);
       }
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Signup failed");
@@ -185,6 +185,20 @@ function Signup() {
           {success && <p className="text-green-500 mb-2">{success}</p>}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <label className="text-sm flex items-center gap-2">
+                <input type="radio" name="role" value="customer" checked={role==='customer'} onChange={()=>setRole('customer')} className="form-radio" />
+                <span className="text-sm">Customer</span>
+              </label>
+              <label className="text-sm flex items-center gap-2">
+                <input type="radio" name="role" value="retailer" checked={role==='retailer'} onChange={()=>setRole('retailer')} className="form-radio" />
+                <span className="text-sm">Retailer</span>
+              </label>
+              <label className="text-sm flex items-center gap-2">
+                <input type="radio" name="role" value="wholesaler" checked={role==='wholesaler'} onChange={()=>setRole('wholesaler')} className="form-radio" />
+                <span className="text-sm">Wholesaler</span>
+              </label>
+            </div>
             <input
               className="border p-3 rounded focus:ring-2 focus:ring-purple-300"
               placeholder="Email"

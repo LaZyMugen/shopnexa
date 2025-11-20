@@ -8,26 +8,33 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true); // Start with true for initial check
 
-  //signup
-const signup = async (email, password) => {
+  //signup (now supports client-side demo role-based signup)
+  const signup = async (email, password, role = 'customer') => {
   try {
     setLoading(true);
-    const res = await api.post("/auth/signup", { email, password });
-
-    // Supabase returns { session: { access_token }, user } inside `data`
-    // Axios wraps that as res.data, so check for session.access_token first.
-    const token = res.data?.session?.access_token || res.data?.token || res.data?.accessToken;
-    const userData = res.data?.user || res.data?.session?.user;
-
-    if (token) {
-      localStorage.setItem("token", token);
-      if (userData) setUser(userData);
-    } else {
-      // No token means signup likely requires email confirmation (no session returned).
-      // Leave user as null and let the UI handle the confirmation flow.
-    }
-
-    return res.data;
+      // Try server signup first; if backend unavailable or returns error, fall back to client-side demo
+      try {
+        const res = await api.post("/auth/signup", { email, password, role });
+        const token = res.data?.session?.access_token || res.data?.token || res.data?.accessToken;
+        const userData = res.data?.user || res.data?.session?.user;
+        if (token) {
+          localStorage.setItem("token", token);
+          if (userData) setUser(userData);
+        }
+        return res.data;
+      } catch (err) {
+        console.warn('Signup fallback (server error)', err);
+        // Fallback: persist a demo user in localStorage
+        const users = JSON.parse(localStorage.getItem('demo_users') || '[]');
+        const id = `local-${Date.now()}`;
+        const userObj = { id, email, role, createdAt: new Date().toISOString() };
+        users.push(userObj);
+        localStorage.setItem('demo_users', JSON.stringify(users));
+        // Create a demo token and set user
+        localStorage.setItem('token', `__demo_token__:${id}`);
+        setUser(userObj);
+        return { user: userObj, demo: true };
+      }
   } catch (err) {
     console.error("Signup error:", err.response?.data || err.message);
     throw err;
@@ -41,17 +48,26 @@ const signup = async (email, password) => {
  const login = async (email, password) => {
   try {
     setLoading(true);
-    const res = await api.post("/auth/login", { email, password });
-
-  const token = res.data?.session?.access_token || res.data?.token || res.data?.accessToken;
-  const userData = res.data?.user || res.data?.session?.user;
-
-  if (!token) throw new Error("No token returned from backend");
-
-  localStorage.setItem("token", token);
-  if (userData) setUser(userData);
-
-    return res.data;
+    try {
+      const res = await api.post("/auth/login", { email, password });
+      const token = res.data?.session?.access_token || res.data?.token || res.data?.accessToken;
+      const userData = res.data?.user || res.data?.session?.user;
+      if (!token) throw new Error("No token returned from backend");
+      localStorage.setItem("token", token);
+      if (userData) setUser(userData);
+      return res.data;
+    } catch (err) {
+      // Fallback: try to login against demo_users in localStorage
+      const users = JSON.parse(localStorage.getItem('demo_users') || '[]');
+      const found = users.find(u => u.email === email);
+      if (found) {
+        const id = found.id;
+        localStorage.setItem('token', `__demo_token__:${id}`);
+        setUser(found);
+        return { user: found, demo: true };
+      }
+      throw err;
+    }
   } catch (err) {
     console.error("Login error:", err.response?.data || err.message);
     throw err;

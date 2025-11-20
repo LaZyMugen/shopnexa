@@ -8,6 +8,7 @@ import { useCart } from "../context/cartContext";
 import ProductCard from "../components/ProductCard";
 import ThemeToggle from "../components/ThemeToggle";
 import ProfileButton from "../components/ProfileButton";
+import { useAuth } from "../context/authContext";
 import { useTheme } from "../context/themeContext";
 
 function StoreInner() {
@@ -34,9 +35,24 @@ function StoreInner() {
       try {
         const res = await api.get("/products");
         const data = res?.data?.data ?? [];
-        if (mounted) setProducts(Array.isArray(data) ? data : []);
+        // merge server products with locally created products (demo)
+        const local = (() => {
+          try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch (e) { return []; }
+        })();
+        // include only published local products
+        const localPublished = Array.isArray(local) ? local.filter(p => p.published !== false) : [];
+        const merged = Array.isArray(data) ? [...data] : [];
+        // avoid duplicates by id
+        const ids = new Set(merged.map(p => p.id));
+        for (const lp of localPublished) {
+          if (!ids.has(lp.id)) merged.unshift(lp);
+        }
+        if (mounted) setProducts(merged);
       } catch {
-        if (mounted) setProducts([]);
+        // fallback to local products when server fails
+        const local = (() => { try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch (e) { return []; } })();
+        const localPublished = Array.isArray(local) ? local.filter(p => p.published !== false) : [];
+        if (mounted) setProducts(localPublished);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -88,14 +104,13 @@ function StoreInner() {
   const filtered = useMemo(() => {
     return products.filter((p) => {
       const nameLower = (p.categories?.name || p.category_name || "Unknown").toLowerCase();
-  const catLower = (category || 'all').toLowerCase();
-  const okCat = catLower === "all" || nameLower === catLower;
+      const catLower = (category || 'all').toLowerCase();
+      const okCat = catLower === "all" || nameLower === catLower;
       const okQuery = !query || (p.name || "").toLowerCase().includes(query.toLowerCase());
       const okLocal = !onlyLocal || Boolean(p.region);
       const price = Number(p.price || 0);
       const okMin = minPrice === "" || price >= Number(minPrice);
       const okMax = maxPrice === "" || price <= Number(maxPrice);
-      // shipping/distance filters are global (based on nearest retailer to selected location)
       const ship = locationEstimates.minShipping;
       const dist = locationEstimates.minDistance;
       const okShip = maxShipping === "" || (ship != null && ship <= Number(maxShipping));
@@ -104,25 +119,12 @@ function StoreInner() {
     });
   }, [products, query, category, onlyLocal, minPrice, maxPrice, maxShipping, maxDistance, locationEstimates]);
 
-  const placeOrder = async () => {
-    if (items.length === 0) return;
-    try {
-      const res = await api.post("/orders/demo", { items });
-      alert(`Order placed! ID: ${res.data?.orderId || "demo"}`);
-      clearCart();
-    } catch (err) {
-      console.warn('place order failed', err);
-      alert("Failed to place order (demo)");
-    }
-  };
+  // placeOrder was a demo helper; actual checkout uses /checkout route
 
   const isLightTheme = theme === "light";
 
   return (
-  <div className={`storefront-page relative min-h-screen text-slate-900 dark:text-white md:pl-72 ${isLightTheme ? "" : "bg-[var(--app-bg)]"}`}>
-      {isLightTheme && (
-        <div aria-hidden className="absolute inset-0 -z-10 profile-gradient-light" />
-      )}
+  <div className={`storefront-page relative min-h-screen text-slate-900 dark:text-white md:pl-72 ${isLightTheme ? "bg-white" : "bg-[var(--app-bg)]"}`}>
       {/* Fixed left sidebar (md+) */}
       <aside className="hidden md:block fixed inset-y-0 left-0 w-72 bg-black text-white p-4 overflow-auto z-30">
         <div className="text-sm uppercase tracking-wide text-white/70 mb-3">Categories</div>
@@ -226,6 +228,7 @@ function StoreInner() {
             <div className="flex items-center justify-end gap-3 flex-wrap">
               <ProfileButton variant="inline" />
               <ThemeToggle />
+              <AuthSellButton />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -243,7 +246,7 @@ function StoreInner() {
         {/* Content */}
         <section>
           {/* Logo row (tagline removed) */}
-          <div className="flex justify-center md:justify-start md:pl-6 -mt-12 md:-mt-16 mb-6 pointer-events-none select-none" aria-hidden>
+          <div className="flex justify-start -mt-12 md:-mt-16 mb-16 pointer-events-none select-none md:-ml-16 lg:-ml-12" aria-hidden>
             <img src="/images-removebg-preview.svg" alt="Shopnexa" className="h-20 md:h-24 object-contain opacity-90" />
           </div>
 
@@ -378,4 +381,13 @@ function StoreInner() {
 export default function Storefront() {
   // Outer App-level CartProvider now supplies context; avoid nested provider that caused checkout mismatch.
   return <StoreInner />;
+}
+
+function AuthSellButton() {
+  const { user } = useAuth();
+  if (!user) return null;
+  if (user.role !== 'retailer' && user.role !== 'wholesaler') return null;
+  return (
+    <Link to="/manage-products" className="hidden md:inline-block px-3 py-2 rounded bg-emerald-600 text-white text-sm hover:bg-emerald-500">Sell products</Link>
+  );
 }

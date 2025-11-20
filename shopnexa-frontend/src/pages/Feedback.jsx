@@ -19,6 +19,7 @@ export default function Feedback() {
         await api.post('/support/feedback', { subject, message, contact, location });
         setSuccess('Feedback submitted — thank you!');
       } catch (err) {
+        console.warn('feedback submit failed, saving locally', err);
         const saved = JSON.parse(localStorage.getItem('feedback') || '[]');
         saved.push({ subject, message, contact, location, created: new Date().toISOString() });
         localStorage.setItem('feedback', JSON.stringify(saved));

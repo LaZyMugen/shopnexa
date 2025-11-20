@@ -11,10 +11,12 @@ import Checkout from "./pages/Checkout";
 import Feedback from "./pages/Feedback";
 import Profile from "./pages/Profile";
 import SupportButton from "./components/SupportButton";
-import ProfileButton from "./components/ProfileButton";
+import Onboarding from "./pages/onboarding";
+import RetailerDashboard from "./pages/retailerDashboard";
 import { ThemeProvider } from "./context/themeContext";
 import { CartProvider } from "./context/cartContext";
 import ManageProducts from "./pages/manageProducts";
+import ManageMyProducts from "./pages/manageMyProducts";
 import ManageCategories from "./pages/ManageCategories";
 import ManageOrders from "./pages/ManageOrders";
 import ManageUsers from "./pages/ManageUsers";
@@ -47,6 +49,24 @@ const ProtectedRoute = ({ children }) => {
   return <Navigate to="/login" replace />;
 };
 
+// Admin Route: allows only verified admin users (via admin_auth flag or admin email)
+const AdminRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  const adminFlag = localStorage.getItem('admin_auth') === 'true';
+  const isAdminUser = user && (user.email === 'shaswatsahoo234@gmail.com');
+
+  if (adminFlag || isAdminUser) return children;
+  return <Navigate to="/login" replace />;
+};
+
 // Public Route (block when logged in)
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -57,27 +77,41 @@ const PublicRoute = ({ children }) => {
       </div>
     );
   }
+  // If there's no authenticated user, render the public children.
+  if (!user) return children;
 
-  // If a token exists, consider the user effectively 'logged in' for routing
-  // purposes — the AuthProvider will clear it if it's invalid and trigger
-  // a redirect later. This avoids flicker/redirects when /auth/me returns 304.
-  const token = localStorage.getItem("token");
-  return user || token ? <Navigate to="/landing" replace /> : children;
+  // If we have a user, decide where to redirect. For retailer/wholesaler
+  // roles we must ensure onboarding is complete before sending to landing.
+  try {
+    if (user.role === 'retailer' || user.role === 'wholesaler') {
+      const all = JSON.parse(localStorage.getItem('retailer_profiles') || '[]');
+      const profile = all.find(p => p.retailerId === user.id);
+      const needsOnboarding = !profile || !profile.businessName || !profile.address || !profile.pincode || !profile.categories || profile.categories.length === 0;
+      if (needsOnboarding) return <Navigate to="/onboarding" replace />;
+    }
+  } catch (e) {
+    // If reading localStorage fails for any reason, conservatively send to onboarding
+    console.warn('PublicRoute localStorage read failed', e);
+    if (user.role === 'retailer' || user.role === 'wholesaler') return <Navigate to="/onboarding" replace />;
+  }
+
+  // Default for authenticated users: landing
+  return <Navigate to="/landing" replace />;
 };
 
 function App() {
   return (
     <Router>
     <ErrorBoundary>
+      
   <ThemeProvider>
   <SupportButton />
-  {/* Hide profile button on the landing page */}
-  {window?.location?.pathname !== "/landing" && <ProfileButton />}
+  {/* Profile floating button removed per design — no floating profile in header/side */}
   <CartProvider>
     <Routes>
 
-  {/* Root → landing */}
-  <Route path="/" element={<Navigate to="/landing" replace />} />
+  {/* Root → signup for unauthenticated users (logged-in users will be routed by PublicRoute) */}
+  <Route path="/" element={<Navigate to="/signup" replace />} />
   <Route path="/landing" element={<ProtectedRoute><Landing /></ProtectedRoute>} />
 
         {/* Login */}
@@ -100,14 +134,19 @@ function App() {
           }
         />
 
+        {/* Retailer onboarding (demo) */}
+        <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+        <Route path="/retailer/dashboard" element={<ProtectedRoute><RetailerDashboard /></ProtectedRoute>} />
+  <Route path="/manage-products" element={<ProtectedRoute><ManageMyProducts /></ProtectedRoute>} />
+
         {/* (removed /dashboard) root now points to /admin */}
-        <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-        <Route path="/admin/products" element={<ProtectedRoute><ManageProducts /></ProtectedRoute>} />
-        <Route path="/admin/categories" element={<ProtectedRoute><ManageCategories /></ProtectedRoute>} />
-        <Route path="/admin/orders" element={<ProtectedRoute><ManageOrders /></ProtectedRoute>} />
-        <Route path="/admin/users" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
-        <Route path="/admin/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-        <Route path="/admin/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+  <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+  <Route path="/admin/products" element={<AdminRoute><ManageProducts /></AdminRoute>} />
+  <Route path="/admin/categories" element={<AdminRoute><ManageCategories /></AdminRoute>} />
+  <Route path="/admin/orders" element={<AdminRoute><ManageOrders /></AdminRoute>} />
+  <Route path="/admin/users" element={<AdminRoute><ManageUsers /></AdminRoute>} />
+  <Route path="/admin/analytics" element={<AdminRoute><Analytics /></AdminRoute>} />
+  <Route path="/admin/settings" element={<AdminRoute><Settings /></AdminRoute>} />
 
         {/* Public Storefront for demo */}
   <Route path="/store" element={<Storefront />} />

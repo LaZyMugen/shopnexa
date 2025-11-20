@@ -248,11 +248,158 @@ export default function AdminDashboard() {
                     )}
                   </ul>
                 </div>
+                {/* Local pending products from demo localStorage */}
+                <div className="mt-4">
+                  <div className="mb-2 text-sm text-slate-700 font-medium">Pending local products (demo)</div>
+                  <div className="rounded-2xl bg-white/50 backdrop-blur-md border border-white/20 p-4 shadow-sm">
+                    <LocalPendingProducts />
+                  </div>
+                </div>
               </div>
             </div>
           </>
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+function LocalPendingProducts() {
+  const [local, setLocal] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch (err) { console.warn('read local products failed', err); return []; }
+  });
+
+  const [audit, setAudit] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('admin_audit_log') || '[]'); } catch (err) { console.warn('read admin_audit_log failed', err); return []; }
+  });
+
+  const [modal, setModal] = useState({ open: false, action: null, product: null });
+
+  useEffect(() => {
+    // keep local updated if other tabs change storage
+    const handler = (e) => {
+      if (e.key === 'products') {
+        try { setLocal(JSON.parse(e.newValue || '[]')); } catch (err) { console.warn('storage parse products failed', err); setLocal([]); }
+      }
+      if (e.key === 'admin_audit_log') {
+        try { setAudit(JSON.parse(e.newValue || '[]')); } catch (err) { console.warn('storage parse admin_audit_log failed', err); setAudit([]); }
+      }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, []);
+
+  const pending = useMemo(() => (local || []).filter(p => p.published === false), [local]);
+
+  const pushAudit = (entry) => {
+    const next = [{ id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`, ...entry }, ...(audit || [])].slice(0, 200);
+    try { localStorage.setItem('admin_audit_log', JSON.stringify(next)); } catch (err) { console.warn('saving admin_audit_log failed', err); }
+    setAudit(next);
+  };
+
+  const requestApprove = (p) => setModal({ open: true, action: 'approve', product: p });
+  const requestRemove = (p) => setModal({ open: true, action: 'remove', product: p });
+
+  const performAction = async () => {
+    if (!modal.product) return setModal({ open: false, action: null, product: null });
+    const p = modal.product;
+    setModal({ open: false, action: null, product: null });
+
+    if (modal.action === 'approve') {
+      // update local store
+      const next = local.map(it => it.id === p.id ? { ...it, published: true } : it);
+  try { localStorage.setItem('products', JSON.stringify(next)); } catch (err) { console.warn('saving products failed', err); }
+      setLocal(next);
+
+      // optional server sync
+      let syncResult = 'skipped';
+      let syncMessage = '';
+      try {
+        // try to POST to /products (server may dedupe by id)
+        const payload = { ...p, published: true };
+        await api.post('/products', payload);
+        syncResult = 'synced';
+      } catch (err) {
+        syncResult = 'failed';
+        syncMessage = err?.message || String(err);
+      }
+
+      pushAudit({ action: 'approve', productId: p.id, productName: p.name, timestamp: new Date().toISOString(), result: syncResult, message: syncMessage });
+    }
+
+    if (modal.action === 'remove') {
+      const next = local.filter(it => it.id !== p.id);
+  try { localStorage.setItem('products', JSON.stringify(next)); } catch (err) { console.warn('saving products failed', err); }
+      setLocal(next);
+      pushAudit({ action: 'remove', productId: p.id, productName: p.name, timestamp: new Date().toISOString(), result: 'removed', message: '' });
+    }
+  };
+
+  const clearAudit = () => {
+    try { localStorage.removeItem('admin_audit_log'); } catch (err) { console.warn('clearing admin_audit_log failed', err); }
+    setAudit([]);
+  };
+
+  if (!pending || pending.length === 0) return <div className="text-slate-600">No pending local products</div>;
+
+  return (
+    <div>
+      <ul className="space-y-3">
+        {pending.map(p => (
+          <li key={p.id} className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 bg-gray-100 rounded overflow-hidden">
+                {p.imageBase64 ? <img src={p.imageBase64} alt={p.name} className="h-full w-full object-cover" /> : <div className="h-full w-full flex items-center justify-center text-xs text-slate-400">No image</div>}
+              </div>
+              <div>
+                <div className="font-medium text-slate-800">{p.name}</div>
+                <div className="text-xs text-slate-600">By {p.retailerId}</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => requestApprove(p)} className="px-3 py-1 rounded bg-emerald-600 text-white text-sm">Approve</button>
+              <button onClick={() => requestRemove(p)} className="px-3 py-1 rounded border text-sm">Remove</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {/* Modal */}
+      {modal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setModal({ open: false, action: null, product: null })} />
+          <div className="relative bg-white rounded-lg shadow-lg p-6 w-11/12 max-w-md">
+            <h3 className="text-lg font-semibold">Confirm {modal.action === 'approve' ? 'Approve' : 'Remove'}</h3>
+            <p className="text-sm text-slate-600 mt-2">Are you sure you want to {modal.action === 'approve' ? 'approve and publish' : 'remove'} <strong>{modal.product?.name}</strong>?</p>
+            <div className="mt-4 flex justify-end gap-3">
+              <button onClick={() => setModal({ open: false, action: null, product: null })} className="px-3 py-1 rounded border">Cancel</button>
+              <button onClick={performAction} className="px-3 py-1 rounded bg-emerald-600 text-white">Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Audit log */}
+      <div className="mt-4 border-t pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm text-slate-700 font-medium">Admin audit log</div>
+          <div className="text-xs text-slate-500">Recent actions</div>
+        </div>
+        <div className="space-y-2 max-h-48 overflow-y-auto">
+          {audit && audit.length > 0 ? audit.map(a => (
+            <div key={a.id} className="text-xs text-slate-700 bg-slate-50 p-2 rounded">
+              <div className="flex items-center justify-between">
+                <div><strong className="text-slate-800">{a.action}</strong> — {a.productName}</div>
+                <div className="text-slate-500">{new Date(a.timestamp).toLocaleString()}</div>
+              </div>
+              <div className="text-xxs text-slate-500">Result: {a.result} {a.message ? ` — ${a.message}` : ''}</div>
+            </div>
+          )) : <div className="text-xs text-slate-500">No audit entries</div>}
+        </div>
+        <div className="mt-2 flex justify-end">
+          <button onClick={clearAudit} className="text-xs px-2 py-1 rounded border">Clear log</button>
+        </div>
+      </div>
+    </div>
   );
 }

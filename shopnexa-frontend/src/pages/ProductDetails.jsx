@@ -31,7 +31,8 @@ export default function ProductDetails() {
           const arr = res.data?.data || [];
           const found = arr.find((x) => String(x.id) === String(id));
           if (mounted) setProduct(found || null);
-        } catch (e) {
+        } catch (err2) {
+          console.warn('Failed to load product via fallback', err2);
           if (mounted) setError('Failed to load product');
         }
       } finally {
@@ -42,6 +43,7 @@ export default function ProductDetails() {
   }, [id]);
 
   if (loading) return <div className="p-6">Loading...</div>;
+  if (error) return <div className="p-6 text-red-600">{error}</div>;
   if (!product) return <div className="p-6">Product not found</div>;
 
   return (

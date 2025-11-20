@@ -20,7 +20,7 @@ export default function SupportButton() {
     const restoreTarget = triggerButtonRef.current || prevActiveElementRef.current;
     if (restoreTarget) {
       setTimeout(() => {
-        try { restoreTarget.focus(); } catch(_) {}
+        try { restoreTarget.focus(); } catch(err) { console.warn('focus restore failed', err); }
       }, 0);
     }
     setTimeout(() => { setDone(""); }, 500);
@@ -38,6 +38,7 @@ export default function SupportButton() {
           ? 'sent feedback successfully!'
           : "sorry for the inconvenience! We'll reply shortly to your email");
       } catch (err) {
+        console.warn('support submit failed, saving locally', err);
         const saved = JSON.parse(localStorage.getItem('quickSupport') || '[]');
         saved.push({ subject, message, contact, type: mode, created: new Date().toISOString() });
         localStorage.setItem('quickSupport', JSON.stringify(saved));

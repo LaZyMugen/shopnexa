@@ -29,6 +29,13 @@ export default function Payment() {
   // EMI modal state
   const [showEmiModal, setShowEmiModal] = useState(false);
   const [selectedEmiId, setSelectedEmiId] = useState(null);
+  const [showEmiSetupModal, setShowEmiSetupModal] = useState(false);
+  // Payment issues / contact modal state
+  const [showPaymentIssueModal, setShowPaymentIssueModal] = useState(false);
+  const [issueName, setIssueName] = useState('');
+  const [issueProblem, setIssueProblem] = useState('');
+  const [issueContact, setIssueContact] = useState('');
+  const [issueScreenshot, setIssueScreenshot] = useState(null); // base64
 
   const formatINR = (v) => `₹${(v || 0).toFixed(2)}`;
 
@@ -150,33 +157,8 @@ export default function Payment() {
         setShowEmiModal(true);
         return;
       }
-      setProcessing(true);
-      try {
-        const payments = JSON.parse(localStorage.getItem('payments') || '[]');
-        payments.push({
-          id: `pay-${Date.now()}`,
-          orderId,
-          method: 'emi',
-          discount,
-          totalPaid: totals.finalTotal,
-          emi: {
-            id: selectedEmi.id,
-            months: selectedEmi.months,
-            apr: selectedEmi.apr,
-            perMonth: selectedEmi.perMonth,
-            totalPayable: selectedEmi.totalPayable,
-            interest: selectedEmi.interest,
-          },
-          created: new Date().toISOString()
-        });
-        localStorage.setItem('payments', JSON.stringify(payments));
-        setMessage('EMI set up successful.');
-        setTimeout(() => navigate('/store'), 1200);
-      } catch {
-        setMessage('Failed to persist payment.');
-      } finally {
-        setProcessing(false);
-      }
+      // Open EMI setup modal instead of immediate persist
+      setShowEmiSetupModal(true);
       return;
     }
     setProcessing(true);
@@ -253,14 +235,14 @@ export default function Payment() {
               <img src="/file.svg" alt="Visa / Card Payments" className="h-10 w-auto" />
               <div className="flex-1">
                 <div className="font-medium">Credit or debit card</div>
-                <div className="text-xs text-slate-500">Visa, Mastercard, RuPay supported (demo)</div>
+                <div className="text-xs text-slate-500">Visa, Mastercard, RuPay supported</div>
               </div>
             </button>
             <button onClick={()=>setMethod('upi')} className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='upi'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
               <img src="/upi-logo.svg" alt="UPI Unified Payments Interface" className="h-10 w-auto" />
               <div className="flex-1">
                 <div className="font-medium">Pay with UPI</div>
-                <div className="text-xs text-slate-500">GPay / PhonePe / Paytm (demo)</div>
+                <div className="text-xs text-slate-500">GPay / PhonePe / Paytm</div>
               </div>
             </button>
           </div>
@@ -282,7 +264,7 @@ export default function Payment() {
                     <div className="text-xs text-slate-600">Total payable: {formatINR(selectedEmi.totalPayable)}</div>
                   </>
                 ) : (
-                  <div className="text-xs text-slate-500">No-cost EMIs of up to 24 months (demo)</div>
+                  <div className="text-xs text-slate-500">No-cost EMIs of up to 24 months</div>
                 )}
               </div>
               <span className="text-xs text-indigo-600 underline cursor-pointer" onClick={(e)=>{e.stopPropagation(); setShowEmiModal(true);}}>{method==='emi' && selectedEmi ? 'Change' : 'Explore EMIs'}</span>
@@ -367,7 +349,13 @@ export default function Payment() {
           onClick={payNow}
           className={`w-full px-4 py-3 rounded-lg text-sm font-medium transition ${method && !processing ? 'bg-indigo-600 hover:bg-indigo-500 text-white':'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
         >{processing ? 'Processing...' : method ? `Pay Now (${method.toUpperCase()})` : 'Select a payment method'}</button>
-  {message && <div className="mt-3 text-sm text-indigo-600">{message}</div>}
+        {message && <div className="mt-3 text-sm text-indigo-600">{message}</div>}
+      
+      {/* Issues CTA */}
+      <div className="mt-4 text-center">
+        <div className="text-sm text-slate-600 mb-2">Issues with payment?</div>
+        <button onClick={()=>setShowPaymentIssueModal(true)} className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded">Contact us</button>
+      </div>
       </div>
 
       {/* UPI Modal */}
@@ -572,9 +560,149 @@ export default function Payment() {
         </div>
       )}
 
-      <div className="mt-6 text-center text-xs text-slate-500">
-        No real transactions occur.
-      </div>
+      {/* Payment Issues Modal (black / white) */}
+      {showPaymentIssueModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={()=>setShowPaymentIssueModal(false)} />
+          <div className="relative z-10 w-full max-w-lg mx-auto">
+            <div className="bg-black/40 backdrop-blur-sm text-white rounded-xl shadow-lg border border-white/10 p-6">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="text-lg font-semibold">Report a payment issue</h3>
+                <button onClick={()=>setShowPaymentIssueModal(false)} className="text-white/80 hover:text-white">✕</button>
+              </div>
+              <form onSubmit={(e)=>{e.preventDefault();
+                // basic validation
+                if (!issueName.trim() || !issueProblem.trim()) { setMessage('Please provide your name and a brief description of the problem.'); return; }
+                try {
+                  const saved = JSON.parse(localStorage.getItem('payment_issues') || '[]');
+                  saved.push({ name: issueName, problem: issueProblem, contact: issueContact, screenshot: issueScreenshot, created: new Date().toISOString() });
+                  localStorage.setItem('payment_issues', JSON.stringify(saved));
+                  setMessage('Thanks — your issue has been submitted. We will contact you soon.');
+                  setIssueName(''); setIssueProblem(''); setIssueContact(''); setIssueScreenshot(null);
+                  setShowPaymentIssueModal(false);
+                } catch (err) {
+                  console.warn(err);
+                  setMessage('Failed to save your issue.');
+                }
+              }} className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Your name</label>
+                  <input value={issueName} onChange={e=>setIssueName(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10" placeholder="Full name" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Problem faced in transaction</label>
+                  <textarea value={issueProblem} onChange={e=>setIssueProblem(e.target.value)} rows={5} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10" placeholder="Describe what went wrong" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Screenshot or details (optional)</label>
+                  <input type="file" accept="image/*" onChange={(e)=>{
+                    const f = e.target.files?.[0];
+                    if (!f) return setIssueScreenshot(null);
+                    const reader = new FileReader();
+                    reader.onload = () => setIssueScreenshot(reader.result);
+                    reader.readAsDataURL(f);
+                  }} className="w-full text-sm text-white/80" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Contact details (email or phone)</label>
+                  <input value={issueContact} onChange={e=>setIssueContact(e.target.value)} className="w-full px-3 py-2 rounded bg-white/5 border border-white/10" placeholder="Email or phone" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button type="submit" className="px-4 py-2 bg-white text-black rounded">Submit</button>
+                  <button type="button" onClick={()=>setShowPaymentIssueModal(false)} className="px-4 py-2 border border-white/20 rounded text-white">Cancel</button>
+                </div>
+                <div className="text-xs text-white/80">Provide contact details for better engagement — our support team will reach out.</div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EMI Setup Modal */}
+      {showEmiSetupModal && selectedEmi && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={()=>setShowEmiSetupModal(false)} />
+          <div className="relative z-10 w-full max-w-md mx-auto">
+            <div className="bg-white rounded-xl shadow-lg border p-6">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="text-lg font-semibold">
+                  Set up EMI: <span className="text-emerald-600">{formatINR(selectedEmi.perMonth)}</span> / mo for {selectedEmi.months} months
+                </h3>
+                <button onClick={()=>setShowEmiSetupModal(false)} className="text-slate-500 hover:text-slate-700">✕</button>
+              </div>
+              <div className="text-xs text-slate-600 mb-3">
+                This amount will be auto-deducted monthly from your selected card, including interest (APR {(selectedEmi.apr*100).toFixed(1)}%).
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">Cardholder Name</label>
+                  <input value={cardName} onChange={e=>setCardName(e.target.value)} className="w-full px-3 py-2 rounded border border-slate-300 text-sm" placeholder="Name on card" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">Card Number</label>
+                  <input value={cardNumber} onChange={e=>setCardNumber(e.target.value.replace(/[^0-9 ]/g,''))} className="w-full px-3 py-2 rounded border border-slate-300 text-sm" placeholder="1234 5678 9012 3456" maxLength={19} />
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs text-slate-600 mb-1">Expiry (MM)</label>
+                    <input value={expiryMonth} onChange={e=>setExpiryMonth(e.target.value.replace(/[^0-9]/g,'').slice(0,2))} className="w-full px-3 py-2 rounded border border-slate-300 text-sm" placeholder="MM" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-slate-600 mb-1">Expiry (YY)</label>
+                    <input value={expiryYear} onChange={e=>setExpiryYear(e.target.value.replace(/[^0-9]/g,'').slice(0,2))} className="w-full px-3 py-2 rounded border border-slate-300 text-sm" placeholder="YY" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-slate-600 mb-1">CVV (3 digits)</label>
+                    <input type="password" value={cvv} onChange={e=>setCvv(e.target.value.replace(/[^0-9]/g,'').slice(0,3))} className="w-full px-3 py-2 rounded border border-slate-300 text-sm tracking-widest" placeholder="***" />
+                  </div>
+                </div>
+                <div className="pt-3 flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (!selectedEmi) { setMessage('Please choose an EMI plan.'); return; }
+                      if (!cardName || cardNumber.replace(/\s/g,'').length < 16 || cvv.length !== 3) {
+                        setMessage('Please enter valid card details.');
+                        return;
+                      }
+                      try {
+                        const payments = JSON.parse(localStorage.getItem('payments') || '[]');
+                        payments.push({
+                          id: `pay-${Date.now()}`,
+                          orderId,
+                          method: 'emi',
+                          discount,
+                          totalPaid: totals.finalTotal,
+                          emi: {
+                            id: selectedEmi.id,
+                            months: selectedEmi.months,
+                            apr: selectedEmi.apr,
+                            perMonth: selectedEmi.perMonth,
+                            totalPayable: selectedEmi.totalPayable,
+                            interest: selectedEmi.interest,
+                          },
+                          created: new Date().toISOString()
+                        });
+                        localStorage.setItem('payments', JSON.stringify(payments));
+                        setShowEmiSetupModal(false);
+                        setMessage('EMI set up successful.');
+                        setTimeout(() => navigate('/store'), 1200);
+                      } catch {
+                        setMessage('Failed to persist payment.');
+                      }
+                    }}
+                    className="px-4 py-2 rounded bg-indigo-600 text-white text-sm"
+                  >
+                    Set up EMI
+                  </button>
+                  <button onClick={()=>setShowEmiSetupModal(false)} className="px-4 py-2 rounded border border-slate-300 text-sm">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
     </div>
   );
 }
