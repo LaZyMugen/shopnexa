@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useRef, useState, useCallback } from "react";
 import LogoutButton from "../components/LogoutButton";
 import { useAuth } from "../context/authContext";
@@ -73,6 +73,17 @@ export default function Landing() {
   try { localStorage.setItem('admin_auth', 'true'); } catch (err) { console.warn('admin_auth persist failed', err); }
   navigate('/admin');
   };
+
+  // Open admin modal when landing is visited with ?showAdmin=1 (used when non-admins
+  // try to reach /admin — App redirects them here so they see the admin gate UI)
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    try {
+      if (searchParams.get('showAdmin') === '1') setShowAdminModal(true);
+    } catch (err) {
+      // ignore
+    }
+  }, [searchParams]);
 
   // Note: contact animations are only triggered on explicit click (handleContactClick)
 

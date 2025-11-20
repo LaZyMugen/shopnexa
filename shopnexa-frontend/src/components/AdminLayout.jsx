@@ -44,6 +44,17 @@ export default function AdminLayout({ children }) {
               );
             })}
 
+            {/* Retailer dashboard link for admin control center */}
+            <NavLink
+              to="/retailer/dashboard"
+              className={`flex items-center gap-3 px-3 py-2 rounded-xl text-white text-sm transition-all ${
+                location.pathname === "/retailer/dashboard" ? "bg-gray-800 shadow-md ring-1 ring-white/30" : "hover:bg-gray-700"
+              }`}
+            >
+              <span className="text-gray-400"><ArrowLeft size={18} /></span>
+              <span>Retailer dashboard</span>
+            </NavLink>
+
             {/* Public section */}
             <div className="mt-6 mb-2 px-3 text-[10px] tracking-wide uppercase text-gray-500">Public</div>
             <NavLink

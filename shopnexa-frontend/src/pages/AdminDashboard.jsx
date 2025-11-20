@@ -24,16 +24,26 @@ export default function AdminDashboard() {
   useEffect(() => {
     let isMounted = true;
     const fetchAll = async () => {
+      // Try to render quickly from session cache (if available)
+      try {
+        const cachedProducts = sessionStorage.getItem('admin_products_cache');
+        const cachedOrders = sessionStorage.getItem('admin_orders_cache');
+        if (cachedProducts) setProducts(JSON.parse(cachedProducts));
+        if (cachedOrders) setOrders(JSON.parse(cachedOrders));
+      } catch (err) {
+        console.warn('admin cache read failed', err);
+      }
+
       setLoading(true);
       setProductsError(false);
       setOrdersError(false);
       setUsersError(false);
       setMetricsError(false);
 
-      const [prodRes, ordRes, usrRes] = await Promise.allSettled([
+      // Fetch the most critical endpoints first (products + orders) and show UI as soon as they arrive
+      const [prodRes, ordRes] = await Promise.allSettled([
         api.get("/products"),
         api.get("/orders"),
-        api.get("/users"),
       ]);
 
       if (!isMounted) return;
@@ -41,6 +51,7 @@ export default function AdminDashboard() {
       if (prodRes.status === "fulfilled") {
         const data = prodRes.value?.data?.data ?? prodRes.value?.data ?? [];
         setProducts(Array.isArray(data) ? data : []);
+        try { sessionStorage.setItem('admin_products_cache', JSON.stringify(Array.isArray(data) ? data : [])); } catch (err) { /* ignore */ }
       } else {
         setProductsError(true);
         setProducts([]);
@@ -49,30 +60,40 @@ export default function AdminDashboard() {
       if (ordRes.status === "fulfilled") {
         const data = ordRes.value?.data?.data ?? ordRes.value?.data ?? [];
         setOrders(Array.isArray(data) ? data : []);
+        try { sessionStorage.setItem('admin_orders_cache', JSON.stringify(Array.isArray(data) ? data : [])); } catch (err) { /* ignore */ }
       } else {
         setOrdersError(true);
         setOrders([]);
       }
 
-      if (usrRes.status === "fulfilled") {
-        const data = usrRes.value?.data?.data ?? usrRes.value?.data ?? [];
-        setUsers(Array.isArray(data) ? data : []);
-      } else {
-        setUsersError(true);
-        setUsers([]);
-      }
-
-      // Fetch metrics (admin) separately so we can still show base data if it fails
-      try {
-        const mRes = await api.get("/admin/metrics");
-        setMetrics(mRes.data?.data || null);
-      } catch (err) {
-        console.warn('metrics fetch error', err);
-        setMetricsError(true);
-        setMetrics(null);
-      }
-
+      // We can now render the page; fetch remaining non-blocking data (users, metrics) in background
       setLoading(false);
+
+      // Fetch users and metrics in background; their results will patch the UI when available
+      (async () => {
+        const [usrRes, mRes] = await Promise.allSettled([
+          api.get('/users'),
+          api.get('/admin/metrics'),
+        ]);
+
+        if (!isMounted) return;
+
+        if (usrRes.status === 'fulfilled') {
+          const data = usrRes.value?.data?.data ?? usrRes.value?.data ?? [];
+          setUsers(Array.isArray(data) ? data : []);
+        } else {
+          setUsersError(true);
+          setUsers([]);
+        }
+
+        if (mRes.status === 'fulfilled') {
+          setMetrics(mRes.value?.data?.data || null);
+        } else {
+          console.warn('metrics fetch error', mRes.status === 'rejected' ? mRes.reason : 'unknown');
+          setMetricsError(true);
+          setMetrics(null);
+        }
+      })();
     };
 
     fetchAll();

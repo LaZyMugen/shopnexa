@@ -1,5 +1,4 @@
 import { useEffect, useState, useMemo } from 'react';
-import QRCode from 'qrcode';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 
 function loadOrder(id) {
@@ -23,7 +22,8 @@ export default function Payment() {
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [upiTimeLeft, setUpiTimeLeft] = useState(120);
   const upiDuration = 120;
-  const [qrDataUrl, setQrDataUrl] = useState(null);
+  // Static UPI QR (replaces generated QR code)
+  const upiQrPath = encodeURI('/Screenshot 2025-11-20 231910.svg');
   // Card modal state
   const [showCardModal, setShowCardModal] = useState(false);
   // EMI modal state
@@ -192,14 +192,7 @@ export default function Payment() {
     }
   }, [showUpiModal, upiTimeLeft]);
 
-  // Generate a real QR code for UPI when modal opens
-  useEffect(() => {
-    if (!showUpiModal || !order) return;
-    const payload = `upi://pay?pa=demo@upi&pn=ShopNexa&am=${(totals.finalTotal || 0).toFixed(2)}&tn=ORDER-${orderId}`;
-    QRCode.toDataURL(payload, { margin: 1, width: 256 })
-      .then(url => setQrDataUrl(url))
-      .catch(() => setQrDataUrl(null));
-  }, [showUpiModal, order, totals.finalTotal, orderId]);
+  // Removed dynamic QR generation; using static SVG asset instead
 
   if (!order) {
     return (
@@ -370,16 +363,9 @@ export default function Payment() {
                 </h3>
                 <button onClick={()=>setShowUpiModal(false)} className="text-slate-500 hover:text-slate-700">✕</button>
               </div>
-              {/* Real QR generated from orderId + amount */}
+              {/* Static QR SVG from public folder */}
               <div className="mx-auto w-48 h-48 rounded-md bg-white border flex items-center justify-center overflow-hidden">
-                {qrDataUrl ? (
-                  <img src={qrDataUrl} alt="UPI QR" className="w-full h-full object-contain" />
-                ) : (
-                  <div className="w-full h-full" style={{
-                    backgroundImage:
-                      'repeating-linear-gradient(0deg, #000 0 8px, #fff 8px 16px), repeating-linear-gradient(90deg, #000 0 8px, #fff 8px 16px)'
-                  }} />
-                )}
+                <img src={upiQrPath} alt="UPI QR Code" className="w-full h-full object-contain" />
               </div>
               {/* Timer ring */}
               <div className="mt-5 flex flex-col items-center">

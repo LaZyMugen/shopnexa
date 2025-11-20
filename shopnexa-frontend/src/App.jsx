@@ -64,7 +64,9 @@ const AdminRoute = ({ children }) => {
   const isAdminUser = user && (user.email === 'shaswatsahoo234@gmail.com');
 
   if (adminFlag || isAdminUser) return children;
-  return <Navigate to="/login" replace />;
+  // If not authorized, send user to the landing page and trigger the admin modal there
+  // Landing will open the admin login box when `showAdmin=1` is present in the query string.
+  return <Navigate to="/landing?showAdmin=1" replace />;
 };
 
 // Public Route (block when logged in)

@@ -26,6 +26,7 @@ export default function AdminSidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
         <SidebarItem to="/admin" icon={<LayoutDashboard />} label="Dashboard" />
+        <SidebarItem to="/retailer/dashboard" icon={<ArrowLeft />} label="Retailer dashboard" />
         <SidebarItem to="/admin/products" icon={<Package />} label="Products" />
         <SidebarItem to="/admin/categories" icon={<FolderTree />} label="Categories" />
         <SidebarItem to="/admin/orders" icon={<ShoppingCart />} label="Orders" />
@@ -41,7 +42,7 @@ export default function AdminSidebar() {
       <div className="px-4 py-4 border-t border-gray-800">
         {/* Prominent Return to Landing button placed above settings/logout for visibility */}
         <div className="mb-3 px-2">
-          <a href="/" className="block w-full text-center px-6 py-3 rounded-lg bg-slate-700 text-white font-medium hover:bg-slate-600">Return to Landing</a>
+          <a href="/landing" className="block w-full text-center px-6 py-3 rounded-lg bg-slate-700 text-white font-medium hover:bg-slate-600">Return to Landing</a>
         </div>
         <SidebarItem to="/admin/settings" icon={<Settings />} label="Settings" />
         <SidebarItem to="/logout" icon={<LogOut />} label="Logout" />

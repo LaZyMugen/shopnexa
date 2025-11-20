@@ -57,15 +57,10 @@ export default function Header() {
             </button>
           </div>
 
-          <div
-            className="flex items-center gap-3"
-            title={user?.email || user?.name || 'Admin'}
-            aria-label={user?.email || user?.name || 'Admin'}
-            tabIndex={0}
-          >
+          <div className="flex items-center gap-3" title="Shaswat Sahoo" aria-label="Shaswat Sahoo" tabIndex={0}>
             <div className="text-sm text-slate-800">
-              <div className="font-medium">{user?.name || user?.email || "Admin"}</div>
-              <div className="text-xs text-slate-600">Administrator</div>
+              <div className="font-medium">Shaswat Sahoo</div>
+              <div className="text-xs text-slate-600">admin</div>
             </div>
             {/* Profile avatar removed as requested */}
           </div>
