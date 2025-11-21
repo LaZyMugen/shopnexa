@@ -9,11 +9,11 @@ import ProductCard from "../components/ProductCard";
 import ThemeToggle from "../components/ThemeToggle";
 import ProfileButton from "../components/ProfileButton";
 import LogoutButton from "../components/LogoutButton";
-import { useAuth } from "../context/authContext";
 import { useTheme } from "../context/themeContext";
+import { useAuth } from "../context/authContext";
 
 function StoreInner() {
-  const { theme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -417,6 +417,7 @@ function StoreInner() {
                 </div>
                 <Link
                   to="/checkout"
+                  onClick={() => { try { setTheme('light'); } catch {} }}
                   className="block w-full text-center px-4 py-3 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"
                 >Checkout</Link>
               </div>

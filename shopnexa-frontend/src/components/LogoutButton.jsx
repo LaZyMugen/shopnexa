@@ -11,12 +11,13 @@ export default function LogoutButton({ className = "" }) {
     navigate('/signup');
   };
 
+  // High-contrast pill so it's visible both on light and dark backgrounds.
   return (
     <button
       onClick={handleLogout}
       title="Logout"
-      className={`text-red-600 hover:text-red-700 font-semibold text-sm ${className}`}
-      style={{ background: 'transparent', border: 'none', padding: 0 }}
+      className={`inline-flex items-center gap-2 px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700 text-sm font-semibold ${className}`}
+      aria-label="Logout"
     >
       Logout
     </button>

@@ -16,6 +16,9 @@ export default function ProductCard({ product, onAdd, hints }) {
           {product.name}
         </Link>
         <div className="text-sm text-slate-700/80 dark:text-white mt-1">₹{product.price} • Stock: {product.stock ?? 0}</div>
+        {product.description && (
+          <div className="mt-2 text-sm text-slate-600 dark:text-slate-200 line-clamp-2">{product.description}</div>
+        )}
         <div className="mt-2 flex flex-wrap gap-1">
           {product.region && (
             <span className="inline-flex items-center text-[11px] px-2 py-1 rounded-full bg-sky-100/80 text-black dark:text-black backdrop-blur-sm">{product.region}</span>
