@@ -208,7 +208,8 @@ export default function Payment() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
+    // Always light background for payment clarity, even if global theme was toggled dark elsewhere.
+    <div className="max-w-3xl mx-auto p-6 bg-white text-slate-800">
       <CheckoutProgress currentStep={2} />
       <div className="bg-white rounded-xl border p-8 shadow-sm">
         <h1 className="text-2xl font-semibold mb-1">Payment</h1>

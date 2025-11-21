@@ -8,6 +8,7 @@ import { useCart } from "../context/cartContext";
 import ProductCard from "../components/ProductCard";
 import ThemeToggle from "../components/ThemeToggle";
 import ProfileButton from "../components/ProfileButton";
+import LogoutButton from "../components/LogoutButton";
 import { useAuth } from "../context/authContext";
 import { useTheme } from "../context/themeContext";
 
@@ -166,10 +167,12 @@ function StoreInner() {
 
   // placeOrder was a demo helper; actual checkout uses /checkout route
 
-  const isLightTheme = theme === "light";
+  // Force storefront to use a dark presentation regardless of global theme so it stays visually distinct.
+  // We still conditionally style elements that rely on light backgrounds, but page chrome is dark-only.
+  const isLightTheme = false; // override global theme for this page
 
   return (
-  <div className={`storefront-page relative min-h-screen text-slate-900 dark:text-white md:pl-72 ${isLightTheme ? "bg-white" : "bg-[var(--app-bg)]"}`}>
+  <div className={`storefront-page relative min-h-screen md:pl-72 bg-[var(--app-bg)] text-white`}> 
       {/* Fixed left sidebar (md+) */}
       <aside className="hidden md:block fixed inset-y-0 left-0 w-72 bg-black text-white p-4 overflow-auto z-30">
         <div className="text-sm uppercase tracking-wide text-white/70 mb-3">Categories</div>
@@ -274,6 +277,8 @@ function StoreInner() {
               <ProfileButton variant="inline" />
               <ThemeToggle />
               <AuthSellButton />
+              {/* Logout visible when authenticated (component internally handles auth) */}
+              <LogoutButton className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:bg-red-500" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}

@@ -88,11 +88,40 @@ export default function ShippingPanel(){
     digits[0] = (digits[0] % 4) + 6;
     return digits.join('');
   };
+  const SHIPPER_NAMES = [
+    'MS Enterprises',
+    'Bharat Electronics',
+    "Priya's Fashion Centre",
+    'Shree Logistics',
+    'Sai Traders',
+    'Ganesh Distributors',
+    'Om Express Couriers',
+    'Kamal Garments',
+    'Vijaya Home Store',
+    'Lakshmi Pharma',
+    'Royal Footwear',
+    'GreenLeaf Organics',
+    'Metro Office Supplies',
+    'Classic Stationers',
+    'Sunrise Mobile Hub',
+    'Heritage Textiles',
+    'Urban Decor Mart',
+    'Velocity Auto Parts',
+    'Allied Agro Tools',
+    'Himalaya Tea Traders'
+  ];
+  const deriveShipperName = (orderId) => {
+    // Simple stable hash to index into names
+    let h = 0;
+    for (let i=0;i<String(orderId).length;i++) h = (h * 31 + String(orderId).charCodeAt(i)) >>> 0;
+    return SHIPPER_NAMES[h % SHIPPER_NAMES.length];
+  };
   const openModal = (order) => {
     const phoneDigits = buildPhone(String(order.id));
     const formatted = `+91 ${phoneDigits.slice(0,5)} ${phoneDigits.slice(5)}`;
     const hash = btoa(String(order.id)).replace(/[^A-Z0-9]/gi,'').slice(0,6).toUpperCase();
-    const agent = { name:`Agent ${hash}`, phone: formatted, raw: `+91${phoneDigits}` };
+  const agentName = deriveShipperName(order.id);
+  const agent = { name: agentName, code: hash, phone: formatted, raw: `+91${phoneDigits}` };
     setModal({ open:true, order, agent, revealPhone:false });
     setMessage('');
   };
@@ -122,19 +151,23 @@ export default function ShippingPanel(){
         {loading && <div className="text-sm text-slate-500">Loading...</div>}
         <div className="rounded-xl bg-white/70 backdrop-blur p-4 border border-white/30">
           <ul className="divide-y text-sm">
-            {orders.map(o => (
-              <li key={o.id} className="py-4 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="font-medium text-slate-700">Order {o.id}</span>
-                    <span className="text-[10px] text-slate-500">{new Date(o.created_at).toLocaleString()}</span>
-                    <span className="text-[10px] text-slate-500">Status: {stageLabel(o.status)}</span>
+            {orders.map(o => {
+              const shipperName = deriveShipperName(o.id);
+              return (
+                <li key={o.id} className="py-4 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="font-medium text-slate-700">Order {o.id}</span>
+                      <span className="text-[10px] text-slate-500">{new Date(o.created_at).toLocaleString()}</span>
+                      <span className="text-[10px] text-slate-500">Status: {stageLabel(o.status)}</span>
+                      <span className="text-[10px] text-slate-500">Shipper: {shipperName}</span>
+                    </div>
+                    <button onClick={()=>openModal(o)} className="px-3 py-1.5 rounded bg-indigo-600 text-white text-xs">Contact Shipper</button>
                   </div>
-                  <button onClick={()=>openModal(o)} className="px-3 py-1.5 rounded bg-indigo-600 text-white text-xs">Contact Shipper</button>
-                </div>
-                <ShippingProgress status={o.status} />
-              </li>
-            ))}
+                  <ShippingProgress status={o.status} />
+                </li>
+              );
+            })}
             {orders.length===0 && !loading && <li className="py-6 text-center text-slate-500">No orders available</li>}
           </ul>
         </div>
