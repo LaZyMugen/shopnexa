@@ -8,6 +8,7 @@ const MENU = [
   { name: "Products", path: "/admin/products", icon: <Box size={18} /> },
   { name: "Categories", path: "/admin/categories", icon: <Layers size={18} /> },
   { name: "Orders", path: "/admin/orders", icon: <ShoppingCart size={18} /> },
+  { name: "Shipping", path: "/admin/shipping", icon: <Package size={18} /> },
   { name: "Users", path: "/admin/users", icon: <Users size={18} /> },
   { name: "Analytics", path: "/admin/analytics", icon: <BarChart2 size={18} /> },
   { name: "Settings", path: "/admin/settings", icon: <Settings size={18} /> },

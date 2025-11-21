@@ -37,8 +37,29 @@ function StoreInner() {
         const data = res?.data?.data ?? [];
         // merge server products with locally created products (demo)
         const local = (() => {
-          try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch (e) { return []; }
+          try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch { return []; }
         })();
+        // Proxy products: join wholesaler catalog with retailer margin links
+        const wh = (() => { try { return JSON.parse(localStorage.getItem('wholesaler_products') || '[]'); } catch { return []; } })();
+        const proxyLinks = (() => { try { return JSON.parse(localStorage.getItem('retailer_proxy_products') || '[]'); } catch { return []; } })();
+        const proxyProducts = proxyLinks.filter(l=>l.published!==false).map(l => {
+          const w = wh.find(x => x.id === l.wholesalerProductId);
+          if (!w) return null;
+          const price = (w.basePrice || w.price || 0) * (1 + (l.marginPercent||0)/100);
+          return {
+            id: `proxy-${l.retailerId}-${w.id}`,
+            name: w.name + ' (Proxy)',
+            price: Number(price.toFixed(2)),
+            stock: w.minQty * 10, // synthetic stock for demo
+            image_url: w.imageBase64,
+            category_name: w.category || 'Proxy',
+            proxy: true,
+            retailerId: l.retailerId,
+            originalWholesalerProductId: w.id,
+            marginPercent: l.marginPercent,
+            published: true
+          };
+        }).filter(Boolean);
         // include only published local products
         const localPublished = Array.isArray(local) ? local.filter(p => p.published !== false) : [];
         const merged = Array.isArray(data) ? [...data] : [];
@@ -47,12 +68,36 @@ function StoreInner() {
         for (const lp of localPublished) {
           if (!ids.has(lp.id)) merged.unshift(lp);
         }
+        for (const pp of proxyProducts) {
+          if (!ids.has(pp.id)) merged.unshift(pp);
+        }
         if (mounted) setProducts(merged);
       } catch {
         // fallback to local products when server fails
-        const local = (() => { try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch (e) { return []; } })();
+        const local = (() => { try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch { return []; } })();
         const localPublished = Array.isArray(local) ? local.filter(p => p.published !== false) : [];
-        if (mounted) setProducts(localPublished);
+        const wh = (() => { try { return JSON.parse(localStorage.getItem('wholesaler_products') || '[]'); } catch { return []; } })();
+        const proxyLinks = (() => { try { return JSON.parse(localStorage.getItem('retailer_proxy_products') || '[]'); } catch { return []; } })();
+        const proxyProducts = proxyLinks.filter(l=>l.published!==false).map(l => {
+          const w = wh.find(x => x.id === l.wholesalerProductId);
+          if (!w) return null;
+          const price = (w.basePrice || w.price || 0) * (1 + (l.marginPercent||0)/100);
+          return {
+            id: `proxy-${l.retailerId}-${w.id}`,
+            name: w.name + ' (Proxy)',
+            price: Number(price.toFixed(2)),
+            stock: w.minQty * 10,
+            image_url: w.imageBase64,
+            category_name: w.category || 'Proxy',
+            proxy: true,
+            retailerId: l.retailerId,
+            originalWholesalerProductId: w.id,
+            marginPercent: l.marginPercent,
+            published: true
+          };
+        }).filter(Boolean);
+        const merged = [...proxyProducts, ...localPublished];
+        if (mounted) setProducts(merged);
       } finally {
         if (mounted) setLoading(false);
       }

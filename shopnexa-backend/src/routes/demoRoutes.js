@@ -1,5 +1,6 @@
 import express from "express";
 import pool from "../../config/db.js";
+import supabase from "../config/supabaseClient.js";
 
 const router = express.Router();
 
@@ -129,3 +130,59 @@ router.post("/seed", async (req, res) => {
 });
 
 export default router;
+
+// Seed synthetic shipping orders (SSE-friendly) using Supabase orders table.
+router.post('/seed-shipping', async (req, res) => {
+  try {
+    // Fetch existing orders first
+    const { data: existing, error: existErr } = await supabase.from('orders').select('id');
+    if (existErr) {
+      // fall back: just return demo ack without inserting
+      return res.json({ success:true, demo:true, note:'Could not access orders table; demo only.' });
+    }
+    if (existing && existing.length >= 8) {
+      return res.json({ success:true, skipped:true, message:'Sufficient orders already present' });
+    }
+    const statuses = ['pending','shipped','out_for_delivery','completed','paid','shipped','out_for_delivery','completed'];
+    const now = Date.now();
+    const rows = [];
+    for (let i=0;i<statuses.length;i++) {
+      const ts = new Date(now - i*60*60*1000).toISOString();
+      rows.push({ user_id: null, total_amount: (Math.round((i+2)*175.5)), status: statuses[i], created_at: ts });
+    }
+    // Insert rows
+    const { data: inserted, error: insErr } = await supabase.from('orders').insert(rows).select();
+    if (insErr) throw insErr;
+    return res.json({ success:true, created: inserted.length });
+  } catch (e) {
+    return res.status(500).json({ success:false, error: e.message || String(e) });
+  }
+});
+
+// Fallback list of shipping orders (returns real ones if present, else synthetic without inserting)
+router.get('/shipping-orders', async (req, res) => {
+  try {
+    const { data: orders, error } = await supabase.from('orders').select('id,total_amount,status,created_at');
+    if (error) {
+      // supply synthetic if error
+      return res.json({ success:true, data: buildSynthetic() });
+    }
+    if (!orders || orders.length === 0) {
+      return res.json({ success:true, data: buildSynthetic(), demo:true });
+    }
+    return res.json({ success:true, data: orders, demo:false });
+  } catch (e) {
+    return res.json({ success:true, data: buildSynthetic(), demo:true, note:'Crash fallback' });
+  }
+});
+
+function buildSynthetic() {
+  const statuses = ['pending','shipped','out_for_delivery','completed','paid','shipped','out_for_delivery','completed'];
+  const now = Date.now();
+  return statuses.map((s,i)=> ({
+    id: 9000 + i,
+    total_amount: (Math.round((i+2)*175.5)),
+    status: s,
+    created_at: new Date(now - i*60*60*1000).toISOString()
+  }));
+}

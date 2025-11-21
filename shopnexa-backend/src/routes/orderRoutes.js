@@ -1,6 +1,6 @@
 import express from "express";
 import authMiddleware from "../middleware/authMiddleware.js";
-import { createOrder, listOrders, getOrder, updateOrderStatus } from "../controllers/orderController.js";
+import { createOrder, listOrders, getOrder, updateOrderStatus, sendShipperMessage } from "../controllers/orderController.js";
 
 const router = express.Router();
 
@@ -15,5 +15,8 @@ router.get("/:id", authMiddleware, getOrder);
 
 // Update status
 router.put("/:id/status", authMiddleware, updateOrderStatus);
+
+// Message shipper
+router.post("/:id/shipper-message", authMiddleware, sendShipperMessage);
 
 export default router;

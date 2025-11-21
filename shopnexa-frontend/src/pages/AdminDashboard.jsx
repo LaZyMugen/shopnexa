@@ -1,8 +1,9 @@
 // AdminDashboard.jsx
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Line, CartesianGrid, XAxis, YAxis, Tooltip, Pie, Cell, LineChart, PieChart } from "recharts";
 import api from "../api/axios";
 import AdminLayout from "../components/AdminLayout";
+import QuickOrderForm from "../components/QuickOrderForm.jsx";
 import GlassCard from "../components/GlassCard";
 import GlassChart from "../components/GlassChart";
 import GlassTable from "../components/GlassTable";
@@ -20,6 +21,8 @@ export default function AdminDashboard() {
   const [reloadTick, setReloadTick] = useState(0);
   const [metrics, setMetrics] = useState(null);
   const [metricsError, setMetricsError] = useState(false);
+  const [recentFeedback, setRecentFeedback] = useState([]);
+  const sseRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -97,8 +100,30 @@ export default function AdminDashboard() {
     };
 
     fetchAll();
+    // Fetch recent feedback initially
+    (async () => {
+      try {
+        const res = await api.get('/products/feedback/recent/list');
+        const arr = res.data?.data || [];
+        setRecentFeedback(Array.isArray(arr)?arr:[]);
+      } catch {/* ignore */}
+    })();
     return () => { isMounted = false; };
   }, [reloadTick]);
+
+  // SSE subscription for feedback-new events
+  useEffect(() => {
+    const url = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api') + '/events';
+    const es = new EventSource(url);
+    sseRef.current = es;
+    es.addEventListener('feedback-new', (evt) => {
+      try {
+        const fb = JSON.parse(evt.data);
+        setRecentFeedback(prev => [fb, ...prev].slice(0,20));
+      } catch {/* ignore */}
+    });
+    return () => { es.close(); };
+  }, []);
 
   // Derived metrics
   const totalProducts = metrics?.totalProducts ?? products.length;
@@ -276,6 +301,30 @@ export default function AdminDashboard() {
                     <LocalPendingProducts />
                   </div>
                 </div>
+              </div>
+            </div>
+            {/* Quick order form */}
+            <div className="mt-6">
+              <QuickOrderForm />
+            </div>
+
+            {/* Recent Feedback */}
+            <div className="mt-8">
+              <div className="mb-3 text-sm text-slate-700 font-medium">Latest Product Feedback</div>
+              <div className="rounded-2xl bg-white/50 backdrop-blur-md border border-white/20 p-4 shadow-sm">
+                <ul className="space-y-2 max-h-64 overflow-y-auto text-xs">
+                  {recentFeedback.map((f,i)=>(
+                    <li key={f.created_at+String(i)} className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="font-medium">Product #{f.product_id}</div>
+                        <div className="text-[10px] text-slate-500">{new Date(f.created_at).toLocaleString()}</div>
+                        <div className="text-[11px] text-slate-600">Rating: {f.rating}★</div>
+                        {f.comment && <div className="text-[11px] text-slate-500 mt-1 line-clamp-2">{f.comment}</div>}
+                      </div>
+                    </li>
+                  ))}
+                  {recentFeedback.length===0 && <li className="text-slate-500">No feedback yet.</li>}
+                </ul>
               </div>
             </div>
           </>

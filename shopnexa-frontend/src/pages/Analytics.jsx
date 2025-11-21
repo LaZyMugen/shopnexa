@@ -4,7 +4,6 @@ import AdminLayout from "../components/AdminLayout";
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 export default function Analytics() {
-  const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [rawOrders, setRawOrders] = useState([]);
@@ -12,18 +11,21 @@ export default function Analytics() {
   const [products, setProducts] = useState([]);
   const [rangeDays, setRangeDays] = useState(30); // default date range
   const [seeding, setSeeding] = useState(false);
+  // local proxy + wholesaler catalogs (demo, client-side)
+  const wholesalerProducts = useMemo(() => { try { return JSON.parse(localStorage.getItem('wholesaler_products')||'[]'); } catch { return []; } }, []);
+  const proxyLinks = useMemo(() => { try { return JSON.parse(localStorage.getItem('retailer_proxy_products')||'[]'); } catch { return []; } }, []);
 
   const load = async () => {
     setLoading(true); setError("");
     try {
-      const [mRes, oRes, uRes, pRes] = await Promise.allSettled([
-        api.get("/admin/metrics"),
+      const [/*mResIgnored*/, oRes, uRes, pRes] = await Promise.allSettled([
+        api.get("/admin/metrics"), // optional backend metrics (ignored for now to avoid unused var)
         api.get("/orders"),
         api.get("/users"),
         api.get("/products"),
       ]);
 
-      if (mRes.status === 'fulfilled') setMetrics(mRes.value?.data?.data || null); else setMetrics(null);
+  // backend metrics currently unused; call retained for future expansion
       if (oRes.status === 'fulfilled') {
         const arr = oRes.value?.data?.data ?? []; setRawOrders(Array.isArray(arr) ? arr : []);
       } else {
@@ -102,33 +104,108 @@ export default function Analytics() {
         const mergedProfiles = [...existingProfiles];
         retailerProfiles.forEach(p=> { if (!mergedProfiles.find(x=>x.retailerId===p.retailerId)) mergedProfiles.push(p); });
         localStorage.setItem('retailer_profiles', JSON.stringify(mergedProfiles));
-      } catch {}
+      } catch { /* ignore retailer profile seed error */ }
 
       // Placeholder base64 (1x1 png) & simple colored variants
       const transparentPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn8B9h1mZt8AAAAASUVORK5CYII=';
+      const placeholderFor = (cat) => {
+        if (!cat) return '/images/placeholders/default.svg';
+        return '/images/placeholders/' + cat.toLowerCase().replace(/\s+/g,'-') + '.svg';
+      };
       const productsDemo = [
-        { id:'P1', retailerId:'U3', name:'Wireless Headphones', sku:'WH-100', price:1999, stock:42, category:'Electronics', imageBase64: transparentPng, published:true, createdAt: now - 86400000*5 },
-        { id:'P2', retailerId:'U3', name:'Smart LED Bulb', sku:'SLB-22', price:499, stock:120, category:'Home', imageBase64: transparentPng, published:true, createdAt: now - 86400000*12 },
-        { id:'P3', retailerId:'U4', name:'Cotton Kurta', sku:'CK-09', price:899, stock:75, category:'Fashion', imageBase64: transparentPng, published:true, createdAt: now - 86400000*3 },
-        { id:'P4', retailerId:'U4', name:'Denim Jacket', sku:'DJ-44', price:1499, stock:33, category:'Fashion', imageBase64: transparentPng, published:true, createdAt: now - 86400000*18 },
-        { id:'P5', retailerId:'U8', name:'Ceramic Vase', sku:'CV-12', price:1299, stock:15, category:'Home', imageBase64: transparentPng, published:true, createdAt: now - 86400000*9 },
-        { id:'P6', retailerId:'U8', name:'Organic Face Cream', sku:'OFC-05', price:699, stock:58, category:'Beauty', imageBase64: transparentPng, published:true, createdAt: now - 86400000*1 },
-        { id:'P7', retailerId:'U3', name:'Bluetooth Speaker', sku:'BS-88', price:2499, stock:27, category:'Electronics', imageBase64: transparentPng, published:true, createdAt: now - 86400000*30 }
+        // Furniture
+        { id: 'P100', retailerId: 'U3', name: 'Solid Teak Dining Table (6 seater)', sku: 'F-TEAK-6', price: 24999, stock: 8, category: 'Furniture', imageBase64: transparentPng, image_url: placeholderFor('Furniture'), published: true, createdAt: now - 86400000 * 40 },
+        { id: 'P101', retailerId: 'U4', name: 'Lounge Sofa 3-seater', sku: 'F-SOFA-3', price: 19999, stock: 5, category: 'Furniture', imageBase64: transparentPng, image_url: placeholderFor('Furniture'), published: true, createdAt: now - 86400000 * 32 },
+        { id: 'P102', retailerId: 'U8', name: 'Mid-Century Coffee Table', sku: 'F-CTBL-01', price: 6999, stock: 12, category: 'Furniture', imageBase64: transparentPng, image_url: placeholderFor('Furniture'), published: true, createdAt: now - 86400000 * 28 },
+        { id: 'P103', retailerId: 'U3', name: 'Ergonomic Office Chair', sku: 'F-OCH-09', price: 5499, stock: 20, category: 'Furniture', imageBase64: transparentPng, image_url: placeholderFor('Furniture'), published: true, createdAt: now - 86400000 * 6 },
+        { id: 'P104', retailerId: 'U4', name: 'Bookshelf (5-tier)', sku: 'F-BKS-05', price: 3999, stock: 14, category: 'Furniture', imageBase64: transparentPng, image_url: placeholderFor('Furniture'), published: true, createdAt: now - 86400000 * 12 },
+
+        // Home decor
+  { id: 'P105', retailerId: 'U8', name: 'Handwoven Jute Rug (5x8)', sku: 'D-RUG-JT', price: 2999, stock: 25, category: 'Home Decor', imageBase64: transparentPng, image_url: placeholderFor('Home Decor'), published: true, createdAt: now - 86400000 * 20 },
+  { id: 'P106', retailerId: 'U3', name: 'Ceramic Table Lamp', sku: 'D-LAMP-CR', price: 1299, stock: 40, category: 'Home Decor', imageBase64: transparentPng, image_url: placeholderFor('Home Decor'), published: true, createdAt: now - 86400000 * 4 },
+  { id: 'P107', retailerId: 'U4', name: 'Framed Wall Art - Abstract', sku: 'D-ART-AB', price: 2199, stock: 18, category: 'Home Decor', imageBase64: transparentPng, image_url: placeholderFor('Home Decor'), published: true, createdAt: now - 86400000 * 16 },
+  { id: 'P108', retailerId: 'U8', name: 'Indoor Plant Set (3 pcs)', sku: 'D-PLANT-3', price: 899, stock: 60, category: 'Home Decor', imageBase64: transparentPng, image_url: placeholderFor('Home Decor'), published: true, createdAt: now - 86400000 * 10 },
+  { id: 'P109', retailerId: 'U3', name: 'Decorative Mirror (Round)', sku: 'D-MIR-RT', price: 1799, stock: 22, category: 'Home Decor', imageBase64: transparentPng, image_url: placeholderFor('Home Decor'), published: true, createdAt: now - 86400000 * 2 },
+
+        // Dresses & Apparel
+  { id: 'P110', retailerId: 'U4', name: 'Silk Sari - Handloom', sku: 'A-SARI-01', price: 4999, stock: 30, category: 'Apparel', imageBase64: transparentPng, image_url: placeholderFor('Apparel'), published: true, createdAt: now - 86400000 * 14 },
+  { id: 'P111', retailerId: 'U4', name: 'A-Line Cotton Dress', sku: 'A-DRESS-AL', price: 1499, stock: 45, category: 'Apparel', imageBase64: transparentPng, image_url: placeholderFor('Apparel'), published: true, createdAt: now - 86400000 * 8 },
+  { id: 'P112', retailerId: 'U3', name: 'Denim Jeans - Slim Fit', sku: 'A-JEANS-DF', price: 1299, stock: 80, category: 'Apparel', imageBase64: transparentPng, image_url: placeholderFor('Apparel'), published: true, createdAt: now - 86400000 * 22 },
+  { id: 'P113', retailerId: 'U8', name: 'Summer Linen Shirt', sku: 'A-SHIRT-LN', price: 899, stock: 70, category: 'Apparel', imageBase64: transparentPng, image_url: placeholderFor('Apparel'), published: true, createdAt: now - 86400000 * 3 },
+
+        // Kitchen & Dining
+  { id: 'P114', retailerId: 'U3', name: 'Non-stick Cookware Set (7 pcs)', sku: 'K-COOK-7', price: 3999, stock: 28, category: 'Kitchen', imageBase64: transparentPng, image_url: placeholderFor('Kitchen'), published: true, createdAt: now - 86400000 * 26 },
+  { id: 'P115', retailerId: 'U4', name: 'Stainless Steel Dinner Set (24 pcs)', sku: 'K-DIN-24', price: 2999, stock: 15, category: 'Kitchen', imageBase64: transparentPng, image_url: placeholderFor('Kitchen'), published: true, createdAt: now - 86400000 * 11 },
+  { id: 'P116', retailerId: 'U8', name: 'Electric Kettle 1.7L', sku: 'K-KET-17', price: 1199, stock: 50, category: 'Kitchen', imageBase64: transparentPng, image_url: placeholderFor('Kitchen'), published: true, createdAt: now - 86400000 * 6 },
+
+        // Bedding & Bath
+  { id: 'P117', retailerId: 'U3', name: 'Cotton Bed Sheet Set (King)', sku: 'B-BED-K', price: 2199, stock: 34, category: 'Bedding', imageBase64: transparentPng, image_url: placeholderFor('Bedding'), published: true, createdAt: now - 86400000 * 19 },
+  { id: 'P118', retailerId: 'U4', name: 'Memory Foam Pillow', sku: 'B-PIL-MF', price: 1499, stock: 60, category: 'Bedding', imageBase64: transparentPng, image_url: placeholderFor('Bedding'), published: true, createdAt: now - 86400000 * 7 },
+
+        // Electronics & Gadgets
+  { id: 'P119', retailerId: 'U3', name: 'Smartwatch (Fitness)', sku: 'E-SW-01', price: 5999, stock: 40, category: 'Electronics', imageBase64: transparentPng, image_url: placeholderFor('Electronics'), published: true, createdAt: now - 86400000 * 13 },
+  { id: 'P120', retailerId: 'U4', name: 'Portable Bluetooth Speaker', sku: 'E-SPK-02', price: 2499, stock: 35, category: 'Electronics', imageBase64: transparentPng, image_url: placeholderFor('Electronics'), published: true, createdAt: now - 86400000 * 5 },
+  { id: 'P121', retailerId: 'U8', name: 'Wireless Earbuds', sku: 'E-EAR-05', price: 1999, stock: 75, category: 'Electronics', imageBase64: transparentPng, image_url: placeholderFor('Electronics'), published: true, createdAt: now - 86400000 * 2 },
+
+        // Kids & Toys
+  { id: 'P122', retailerId: 'U3', name: 'Wooden Toy Train Set', sku: 'T-TRAIN-01', price: 799, stock: 44, category: 'Kids', imageBase64: transparentPng, image_url: placeholderFor('Kids'), published: true, createdAt: now - 86400000 * 15 },
+  { id: 'P123', retailerId: 'U4', name: 'Plush Teddy Bear (Large)', sku: 'T-TED-XL', price: 499, stock: 100, category: 'Kids', imageBase64: transparentPng, image_url: placeholderFor('Kids'), published: true, createdAt: now - 86400000 * 9 },
+
+        // Sports & Outdoor
+  { id: 'P124', retailerId: 'U8', name: 'Yoga Mat (Eco)', sku: 'S-YOGA-01', price: 999, stock: 60, category: 'Sports', imageBase64: transparentPng, image_url: placeholderFor('Sports'), published: true, createdAt: now - 86400000 * 18 },
+  { id: 'P125', retailerId: 'U3', name: 'Mountain Bike - 21 Speed', sku: 'S-BIKE-21', price: 14999, stock: 6, category: 'Sports', imageBase64: transparentPng, image_url: placeholderFor('Sports'), published: true, createdAt: now - 86400000 * 35 },
+
+        // Office & Stationery
+  { id: 'P126', retailerId: 'U4', name: 'Executive Notebook (A4)', sku: 'O-NOTE-A4', price: 299, stock: 200, category: 'Office', imageBase64: transparentPng, image_url: placeholderFor('Office'), published: true, createdAt: now - 86400000 * 1 },
+  { id: 'P127', retailerId: 'U3', name: 'Ballpoint Pen Set (10)', sku: 'O-PEN-10', price: 149, stock: 300, category: 'Office', imageBase64: transparentPng, image_url: placeholderFor('Office'), published: true, createdAt: now - 86400000 * 2 },
+
+        // Personal Care
+  { id: 'P128', retailerId: 'U8', name: 'Herbal Shampoo 500ml', sku: 'PC-SHAM-500', price: 249, stock: 120, category: 'Personal Care', imageBase64: transparentPng, image_url: placeholderFor('Personal Care'), published: true, createdAt: now - 86400000 * 3 },
+  { id: 'P129', retailerId: 'U3', name: 'Electric Toothbrush', sku: 'PC-ETB-01', price: 1999, stock: 40, category: 'Personal Care', imageBase64: transparentPng, image_url: placeholderFor('Personal Care'), published: true, createdAt: now - 86400000 * 21 },
+
+        // Seasonal / Gifts
+        { id: 'P130', retailerId: 'U4', name: 'Gift Hamper - Gourmet', sku: 'G-HAMP-01', price: 2599, stock: 30, category: 'Gifts', imageBase64: transparentPng, image_url: placeholderFor('Gifts'), published: true, createdAt: now - 86400000 * 17 }
       ];
 
-      // Demo Orders - spread across last 90 days
+      // Demo Orders - weighted city distribution for varied sources (deterministic pseudo-random)
+      const cityWeights = [
+        { city: 'Bengaluru', weight: 18 },
+        { city: 'Mumbai', weight: 16 },
+        { city: 'Delhi', weight: 14 },
+        { city: 'Chennai', weight: 12 },
+        { city: 'Hyderabad', weight: 11 },
+        { city: 'Kolkata', weight: 10 },
+        { city: 'Pune', weight: 9 },
+        { city: 'Jaipur', weight: 5 }
+      ];
+      const totalWeight = cityWeights.reduce((s,c)=>s+c.weight,0);
+      const pickWeightedCity = (seedIdx) => {
+        // deterministic pseudo random from index
+        const seed = (seedIdx*9301 + 49297) % 233280;
+        const r = seed / 233280; // 0..1
+        let acc = 0;
+        for (const c of cityWeights) {
+          acc += c.weight / totalWeight;
+          if (r <= acc) return c.city;
+        }
+        return cityWeights[cityWeights.length-1].city;
+      };
       const demoOrders = [];
-      for (let i=0;i<95;i++) {
-        const orderDate = new Date(now - i* ( (i%3===0?12:6) ) * 3600 * 1000); // variable spacing
+      for (let i=0;i<120;i++) { // slightly more orders for stronger differentiation
+        const orderDate = new Date(now - i* ( (i%5===0?18: (i%3===0?12:6)) ) * 3600 * 1000); // variable spacing introduces temporal spread
         const items = [];
         const pick = productsDemo[i % productsDemo.length];
-        items.push({ name: pick.name, category_name: pick.category, quantity: 1 + (i%2), price: pick.price });
+        items.push({ name: pick.name, category_name: pick.category, quantity: 1 + (i%3===0?2:1), price: pick.price });
         if (i%4===0) {
-          const extra = productsDemo[(i+3)%productsDemo.length];
+          const extra = productsDemo[(i+5)%productsDemo.length];
           items.push({ name: extra.name, category_name: extra.category, quantity: 1, price: extra.price });
         }
+        if (i%11===0) { // occasional third item for richer order composition
+          const extra2 = productsDemo[(i+7)%productsDemo.length];
+          items.push({ name: extra2.name, category_name: extra2.category, quantity: 1, price: extra2.price });
+        }
         const total = items.reduce((s,x)=> s + x.price * x.quantity, 0);
-        const city = ['Bengaluru','Mumbai','Delhi','Kolkata','Chennai','Pune','Hyderabad','Jaipur'][i%8];
+        const city = pickWeightedCity(i);
         demoOrders.push({ id:`SEED-${1000+i}`, created_at: orderDate.toISOString(), total, status: ['paid','shipped','processing','delivered'][i%4], city, items });
       }
 
@@ -138,6 +215,14 @@ export default function Analytics() {
         const start = now - i * 60 * 60 * 1000; // every hour
         demoSessions.push({ start, duration: 2 + (i%10) * 0.7, pages: 1 + (i%7) });
       }
+
+      // Ensure seeded products have a visible thumbnail for demo (prefer real image but fall back to category placeholder)
+      const ensureImageUrl = (p) => {
+        if (p.image_url && p.image_url.trim()) return;
+        const cat = (p.category || p.category_name || 'default').toString().toLowerCase().replace(/\s+/g,'-');
+        p.image_url = `/images/placeholders/${cat}.svg`;
+      };
+      productsDemo.forEach(ensureImageUrl);
 
       localStorage.setItem('demo_users', JSON.stringify(demoUsers));
       localStorage.setItem('products', JSON.stringify(productsDemo));
@@ -173,21 +258,44 @@ export default function Analytics() {
 
   // DEMO FALLBACKS & DERIVED DATA
   const orders = rawOrders && rawOrders.length ? rawOrders : (() => {
-    // create deterministic demo orders if none
+    // fallback deterministic weighted city demo orders
+    const cityWeights = [
+      { city: 'Bengaluru', weight: 20 },
+      { city: 'Mumbai', weight: 15 },
+      { city: 'Delhi', weight: 13 },
+      { city: 'Chennai', weight: 11 },
+      { city: 'Hyderabad', weight: 10 },
+      { city: 'Kolkata', weight: 9 },
+      { city: 'Pune', weight: 8 },
+      { city: 'Jaipur', weight: 6 }
+    ];
+    const totalWeight = cityWeights.reduce((s,c)=>s+c.weight,0);
+    const pickWeightedCity = (seedIdx) => {
+      const seed = (seedIdx*1103515245 + 12345) & 0x7fffffff; // LCG
+      const r = (seed % 100000) / 100000; // 0..1
+      let acc = 0;
+      for (const c of cityWeights) {
+        acc += c.weight / totalWeight;
+        if (r <= acc) return c.city;
+      }
+      return cityWeights[cityWeights.length-1].city;
+    };
     const demo = [];
     const base = Date.now();
-    for (let i=0;i<40;i++) {
-      const d = new Date(base - i*6*3600*1000);
+    for (let i=0;i<55;i++) {
+      const d = new Date(base - i*( (i%4===0?9:6) )*3600*1000);
+      const items = [
+        { name: 'Item '+(i%9), category_name: ['Electronics','Fashion','Home','Beauty'][i%4], quantity: 1 + (i%3===0?1:0), price: 199 + (i%5)*20 }
+      ];
+      if (i%5===0) items.push({ name: 'AddOn '+(i%7), category_name: ['Electronics','Sports','Home'][i%3], quantity: 1, price: 99 + (i%4)*15 });
+      const total = items.reduce((s,x)=>s + x.price * x.quantity,0);
       demo.push({
         id: `DEMO-${1000+i}`,
         created_at: d.toISOString(),
-        total: 200 + (i%7)*50 + (i%3)*35,
+        total,
         status: ['paid','shipped','processing','delivered'][i%4],
-        city: ['Bengaluru','Mumbai','Delhi','Kolkata','Chennai','Pune','Hyderabad'][i%7],
-        items: [
-          { name: 'Item '+(i%9), category_name: ['Electronics','Fashion','Home','Beauty'][i%4], quantity: 1 + (i%2), price: 199 + (i%5)*20 },
-          { name: 'Item '+((i+3)%11), category_name: ['Electronics','Sports','Home'][i%3], quantity: 1, price: 99 + (i%4)*15 }
-        ]
+        city: pickWeightedCity(i),
+        items
       });
     }
     return demo;
@@ -210,6 +318,36 @@ export default function Analytics() {
 
   const revenueTotal = useMemo(() => filteredOrders.reduce((s,o)=> s + Number(o.total||0),0), [filteredOrders]);
   const avgOrderValue = useMemo(()=> filteredOrders.length? revenueTotal/filteredOrders.length : 0, [filteredOrders, revenueTotal]);
+  // Proxy metrics: published proxy listings & potential margin revenue (not realized until orders occur)
+  const publishedProxyLinks = useMemo(()=> proxyLinks.filter(l => l.published !== false), [proxyLinks]);
+  const proxyListingsCount = publishedProxyLinks.length;
+  const proxyMarginPotential = useMemo(()=> {
+    let sum = 0;
+    for (const link of publishedProxyLinks) {
+      const w = wholesalerProducts.find(x => x.id === link.wholesalerProductId);
+      if (!w) continue;
+      const base = (w.basePrice || w.price || 0);
+      const margin = base * (link.marginPercent || 0) / 100;
+      sum += margin * (w.minQty ? w.minQty : 1); // rough potential based on minQty batch size
+    }
+    return sum;
+  }, [publishedProxyLinks, wholesalerProducts]);
+  // Realized proxy margin revenue from filteredOrders (items whose name ends with '(Proxy)')
+  const realizedProxyMarginRevenue = useMemo(()=> {
+    let sum = 0;
+    for (const o of filteredOrders) {
+      for (const it of (o.items||[])) {
+        if (typeof it.name === 'string' && it.name.endsWith('(Proxy)')) {
+          const baseName = it.name.replace(/ \(Proxy\)$/,'').trim();
+          const w = wholesalerProducts.find(x => x.name === baseName);
+          const base = (w?.basePrice || w?.price || 0);
+          const marginPerUnit = (Number(it.price||0) - base);
+          if (marginPerUnit > 0) sum += marginPerUnit * (it.quantity||1);
+        }
+      }
+    }
+    return sum;
+  }, [filteredOrders, wholesalerProducts]);
 
   // Orders by day for trend
   const revenueByDay = useMemo(()=>{
@@ -263,7 +401,7 @@ export default function Analytics() {
       const pages = 1 + (i%6);
       synth.push({ start, duration, pages });
     }
-    try { localStorage.setItem('demo_sessions', JSON.stringify(synth)); } catch {}
+  try { localStorage.setItem('demo_sessions', JSON.stringify(synth)); } catch { /* ignore persist error */ }
   }
   const sessions = sessionData.length ? sessionData : (()=>{ try { return JSON.parse(localStorage.getItem('demo_sessions')||'[]'); } catch { return []; } })();
   const avgSessionDuration = sessions.length ? sessions.reduce((s,x)=>s+x.duration,0)/sessions.length : 0;
@@ -323,6 +461,9 @@ export default function Analytics() {
               <MetricCard title="Distinct Cities" value={ordersByCity.length} subtitle="Geographic footprint" />
               <MetricCard title="Categories (velocity)" value={categoryVelocity.length} subtitle="Active categories" />
               <MetricCard title="Retailer Products" value={products.filter(p=>p.retailerId).length} subtitle="Catalog size" />
+              <MetricCard title="Proxy Listings" value={proxyListingsCount} subtitle="Published proxies" />
+              <MetricCard title="Proxy Potential" value={`₹${proxyMarginPotential.toFixed(0)}`} subtitle="Est. margin capacity" />
+              <MetricCard title="Proxy Margin (Realized)" value={`₹${realizedProxyMarginRevenue.toFixed(2)}`} subtitle="From orders" />
             </div>
 
             {/* CHARTS ROW */}

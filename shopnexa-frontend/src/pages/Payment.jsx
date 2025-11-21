@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import CheckoutProgress from '../components/CheckoutProgress';
 
 function loadOrder(id) {
   try {
@@ -208,6 +209,7 @@ export default function Payment() {
 
   return (
     <div className="max-w-3xl mx-auto p-6">
+      <CheckoutProgress currentStep={2} />
       <div className="bg-white rounded-xl border p-8 shadow-sm">
         <h1 className="text-2xl font-semibold mb-1">Payment</h1>
         <p className="text-sm text-emerald-600 mb-6">Enjoy instant cashback with your HDFC Bank credit card.</p>

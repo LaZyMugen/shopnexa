@@ -22,15 +22,41 @@ export default function RetailerDashboard() {
 
   // Load orders & products for metrics
   const orders = useMemo(() => readLocalOrders(), []);
-  const myProducts = useMemo(() => readLocalProducts().filter(p => p.retailerId === user?.id), [user]);
+  const myProducts = useMemo(() => {
+    const base = readLocalProducts().filter(p => p.retailerId === user?.id);
+    // Build virtual proxy products (retailer wholesaler attachments)
+    try {
+      const links = JSON.parse(localStorage.getItem('retailer_proxy_products') || '[]').filter(l => l.retailerId === user?.id && l.published !== false);
+      const wholesaler = JSON.parse(localStorage.getItem('wholesaler_products') || '[]');
+      const virtual = links.map(l => {
+        const w = wholesaler.find(x => x.id === l.wholesalerProductId);
+        if (!w) return null;
+        const price = (w.basePrice || w.price || 0) * (1 + (l.marginPercent || 0) / 100);
+        return {
+          id: `proxy-${user?.id}-${w.id}`,
+          name: w.name + ' (Proxy)',
+          imageBase64: w.imageBase64,
+          retailerId: user?.id,
+          proxy: true,
+          marginPercent: l.marginPercent,
+          sourceWholesalerId: w.id,
+          price: Number(price.toFixed(2))
+        };
+      }).filter(Boolean);
+      return [...base, ...virtual];
+    } catch {
+      return base;
+    }
+  }, [user]);
 
   const metrics = useMemo(() => {
-    if (!user) return { totalOrders: 0, itemsSold: 0, revenue: 0, topItems: [], topCities: [] };
+    if (!user) return { totalOrders: 0, itemsSold: 0, revenue: 0, topItems: [], topCities: [], productCount: 0, proxyCount: 0 };
     const productIds = new Set(myProducts.map(p => p.id));
     const ordersWithMyItems = [];
     const itemTotals = new Map();
     const cityTotals = new Map();
-    let revenue = 0;
+  let grossRevenue = 0; // full price
+  let proxyMarginRevenue = 0; // margin portion for proxy items
     let itemsSold = 0;
 
           for (const o of orders) {
@@ -43,7 +69,31 @@ export default function RetailerDashboard() {
           const qty = Number(it.qty || 1);
           const price = Number(it.price || it.total || 0);
           itemsSold += qty;
-          revenue += price * qty;
+          // Detect proxy via name suffix or product id pattern
+          let marginAdd = 0;
+          if (typeof it.name === 'string' && it.name.endsWith('(Proxy)')) {
+            const baseName = it.name.replace(/ \(Proxy\)$/,'').trim();
+            try {
+              const wholesaler = JSON.parse(localStorage.getItem('wholesaler_products')||'[]');
+              const w = wholesaler.find(x => x.name === baseName);
+              const base = (w?.basePrice || w?.price || 0);
+              const marginPerUnit = price - base;
+              if (marginPerUnit > 0) marginAdd = marginPerUnit * qty;
+            } catch { /* ignore proxy margin calc error */ }
+          } else if (it.id && String(it.id).startsWith('proxy-')) {
+            // attempt parse of id to find wholesaler product id
+            const parts = String(it.id).split('-');
+            const wholesalerId = parts[2];
+            try {
+              const wholesaler = JSON.parse(localStorage.getItem('wholesaler_products')||'[]');
+              const w = wholesaler.find(x => x.id === wholesalerId);
+              const base = (w?.basePrice || w?.price || 0);
+              const marginPerUnit = price - base;
+              if (marginPerUnit > 0) marginAdd = marginPerUnit * qty;
+            } catch { /* ignore proxy id parse error */ }
+          }
+          grossRevenue += price * qty;
+          proxyMarginRevenue += marginAdd;
           const key = it.id || it.productId || it.name || 'unknown';
           itemTotals.set(key, (itemTotals.get(key) || 0) + qty);
           // improved city extraction: prefer penultimate token unless it's numeric (pincode); fallback to last token
@@ -70,12 +120,14 @@ export default function RetailerDashboard() {
   const topItems = Array.from(itemTotals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>({ id:k, qty:v }));
     const topCities = Array.from(cityTotals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>({ city:k, qty:v }));
 
-    return { totalOrders: ordersWithMyItems.length, itemsSold, revenue, topItems, topCities };
+    const proxyCount = myProducts.filter(p => p.proxy).length;
+    const directRevenue = grossRevenue - proxyMarginRevenue;
+    return { totalOrders: ordersWithMyItems.length, itemsSold, revenue: grossRevenue, proxyMarginRevenue, directRevenue, topItems, topCities, productCount: myProducts.length, proxyCount };
   }, [orders, myProducts, user]);
 
   // Resolve topItems to product names and thumbnails by joining against products localStorage
   const localProducts = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch (e) { return []; }
+    try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch { return []; }
   }, []);
 
   const resolvedTopItems = useMemo(() => {
@@ -179,7 +231,7 @@ export default function RetailerDashboard() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-white rounded p-4 border">
                 <div className="text-xs text-slate-500">Orders</div>
                 <div className="text-2xl font-semibold">{metrics.totalOrders}</div>
@@ -191,9 +243,19 @@ export default function RetailerDashboard() {
                 <div className="text-sm text-slate-600">units sold</div>
               </div>
               <div className="bg-white rounded p-4 border">
-                <div className="text-xs text-slate-500">Revenue</div>
+                <div className="text-xs text-slate-500">Gross Revenue</div>
                 <div className="text-2xl font-semibold">₹{metrics.revenue.toFixed(2)}</div>
-                <div className="text-sm text-slate-600">gross (demo)</div>
+                <div className="text-sm text-slate-600">includes proxy items</div>
+              </div>
+              <div className="bg-white rounded p-4 border">
+                <div className="text-xs text-slate-500">Proxy listings</div>
+                <div className="text-2xl font-semibold">{metrics.proxyCount}</div>
+                <div className="text-sm text-slate-600">attached wholesaler items</div>
+              </div>
+              <div className="bg-white rounded p-4 border md:col-span-2">
+                <div className="text-xs text-slate-500">Proxy Margin Revenue</div>
+                <div className="text-2xl font-semibold">₹{metrics.proxyMarginRevenue.toFixed(2)}</div>
+                <div className="text-sm text-slate-600">net margin earned from proxy sales</div>
               </div>
             </div>
 

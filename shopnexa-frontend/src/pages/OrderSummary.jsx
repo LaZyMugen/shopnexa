@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import CheckoutProgress from '../components/CheckoutProgress';
 
 // Address shape: { id, label, name, line1, city, state, postal, country, created }
 function loadAddresses() {
@@ -99,6 +100,7 @@ export default function OrderSummary() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
+      <CheckoutProgress currentStep={1} />
       <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Order Summary</h1>

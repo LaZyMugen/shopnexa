@@ -106,6 +106,9 @@ export default function ManageMyProducts() {
             <button onClick={() => { setEditing(null); setForm({ name: '', sku: '', price: '', stock: '', description: '', imageBase64: '' }); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-left px-3 py-2 rounded hover:bg-slate-50">Add product</button>
             <Link to="/retailer/dashboard" className="px-3 py-2 rounded hover:bg-slate-50 text-left">Dashboard</Link>
             <Link to="/store" className="px-3 py-2 rounded hover:bg-slate-50 text-left">Public storefront</Link>
+            {user.role === 'retailer' && (
+              <Link to="/proxy-catalog" className="px-3 py-2 rounded hover:bg-slate-50 text-left">Wholesaler proxy catalog</Link>
+            )}
           </nav>
         </aside>
 

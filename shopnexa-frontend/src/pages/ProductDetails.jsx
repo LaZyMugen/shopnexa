@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import api from "../api/axios";
 import { useCart } from "../context/cartContext";
@@ -11,6 +11,11 @@ export default function ProductDetails() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState([]);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [submittingFb, setSubmittingFb] = useState(false);
+  const sseRef = useRef(null);
   const [selectedLocation, setSelectedLocation] = useState(null); // {address, lat, lon}
   const [retailers, setRetailers] = useState([]);
   const [chosenRetailerId, setChosenRetailerId] = useState(null);
@@ -41,6 +46,50 @@ export default function ProductDetails() {
     })();
     return () => { mounted = false; };
   }, [id]);
+
+  // Load feedback for product
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await api.get(`/products/${id}/feedback`);
+        if (mounted) setFeedback(Array.isArray(res.data?.data)?res.data.data:[]);
+      } catch {/* ignore */}
+    })();
+    return () => { mounted = false; };
+  }, [id]);
+
+  // Realtime feedback via SSE
+  useEffect(() => {
+    const url = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api') + '/events';
+    const es = new EventSource(url);
+    sseRef.current = es;
+    es.addEventListener('feedback-new', (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        if (String(payload.product_id) === String(id)) {
+          setFeedback(prev => [payload, ...prev]);
+        }
+      } catch {/* ignore */}
+    });
+    return () => { es.close(); };
+  }, [id]);
+
+  const avgRating = feedback.length ? (feedback.reduce((a,b)=>a + (b.rating||0),0)/feedback.length).toFixed(2) : null;
+
+  const submitFeedback = async () => {
+    if (!rating || rating < 1) return;
+    setSubmittingFb(true);
+    try {
+      await api.post(`/products/${id}/feedback`, { rating, comment });
+      setRating(0); setComment("");
+      // The SSE event will append the new feedback; optimistic local add optional
+    } catch (e) {
+      console.warn('Feedback submit failed', e.response?.data?.error||e.message);
+    } finally {
+      setSubmittingFb(false);
+    }
+  };
 
   if (loading) return <div className="p-6">Loading...</div>;
   if (error) return <div className="p-6 text-red-600">{error}</div>;
@@ -130,6 +179,32 @@ export default function ProductDetails() {
             <div className="text-sm text-slate-700 whitespace-pre-wrap">{product.description}</div>
           </div>
         </div>
+      </div>
+      {/* Feedback Section */}
+      <div className="mt-10">
+        <h2 className="text-xl font-semibold mb-4">Feedback</h2>
+        {avgRating && <div className="mb-2 text-sm text-slate-700">Average rating: <span className="font-medium">{avgRating}</span> / 5 • {feedback.length} review{feedback.length!==1 && 's'}</div>}
+        <div className="mb-4 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1">
+            {[1,2,3,4,5].map(r => (
+              <button key={r} onClick={()=>setRating(r)} className={`w-8 h-8 rounded-full text-sm border flex items-center justify-center ${rating>=r? 'bg-amber-400 text-white border-amber-400':'bg-white text-slate-600'}`}>{r}</button>
+            ))}
+          </div>
+          <input value={comment} onChange={e=>setComment(e.target.value)} placeholder="Optional comment" className="flex-1 px-3 py-2 rounded border text-sm" />
+          <button disabled={submittingFb || rating<1} onClick={submitFeedback} className="px-4 py-2 rounded bg-emerald-600 text-white text-sm disabled:opacity-50">{submittingFb? 'Submitting...':'Submit'}</button>
+        </div>
+        <ul className="space-y-3">
+          {feedback.map((f,i)=>(
+            <li key={f.created_at+String(i)} className="p-3 rounded border bg-white/70 backdrop-blur">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Rating: {f.rating}★</span>
+                <span className="text-[10px] text-slate-500">{new Date(f.created_at).toLocaleString()}</span>
+              </div>
+              {f.comment && <div className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{f.comment}</div>}
+            </li>
+          ))}
+          {feedback.length===0 && <li className="text-sm text-slate-500">No feedback yet.</li>}
+        </ul>
       </div>
     </div>
   );

@@ -1,4 +1,7 @@
 import supabase from "../config/supabaseClient.js";
+import bus from "../events/eventBus.js";
+import { sendDeliveryConfirmation } from "../services/deliveryService.js";
+import crypto from "crypto";
 
 // Create order with items (expects items: [{product_id, quantity}])
 export const createOrder = async (req, res) => {
@@ -84,12 +87,45 @@ export const updateOrderStatus = async (req, res) => {
   try {
     const id = req.params.id;
     const { status } = req.body;
-    const allowed = ["pending", "paid", "shipped", "completed", "cancelled"];
+  const allowed = ["pending", "paid", "shipped", "out_for_delivery", "completed", "cancelled"];
     if (!allowed.includes(status)) return res.status(400).json({ success: false, error: "Invalid status" });
     const { data, error } = await supabase.from("orders").update({ status }).eq("id", id).select();
     if (error) throw error;
+    const order = Array.isArray(data) ? data[0] : data;
+    // Broadcast realtime status update
+    bus.emit('order-status', { id: order.id, status: order.status });
+    if (order.status === 'completed') {
+      // Trigger delivery confirmation stub
+      sendDeliveryConfirmation(order);
+    }
     return res.json({ success: true, data });
   } catch (e) {
     return res.status(500).json({ success: false, error: e.message || String(e) });
+  }
+};
+
+// Send message to shipping agent (demo implementation)
+export const sendShipperMessage = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { message } = req.body || {};
+    if (!message || !message.trim()) return res.status(400).json({ success: false, error: 'Message required' });
+    // Fetch order basic data
+    const { data: orderData, error: oErr } = await supabase.from('orders').select('id,status').eq('id', id).limit(1);
+    if (oErr) throw oErr;
+    if (!orderData || !orderData.length) return res.status(404).json({ success:false, error:'Order not found' });
+    const order = orderData[0];
+    // Demo deterministic agent assignment
+    const hash = crypto.createHash('md5').update(String(order.id)).digest('hex').slice(0,6);
+    const agent = {
+      name: `Agent ${hash.toUpperCase()}`,
+      phone: `+91-9${hash.slice(0,2)}${hash.slice(2,4)}-${hash.slice(4,6)}00`,
+    };
+    const payload = { order_id: order.id, message: message.trim(), agent };
+    // Emit SSE event
+    bus.emit('shipper-message', payload);
+    return res.status(201).json({ success:true, data: payload });
+  } catch (e) {
+    return res.status(500).json({ success:false, error: e.message || String(e) });
   }
 };

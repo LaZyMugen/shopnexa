@@ -14,8 +14,10 @@ import SupportButton from "./components/SupportButton";
 import Onboarding from "./pages/onboarding";
 import RetailerDashboard from "./pages/retailerDashboard";
 import { ThemeProvider } from "./context/themeContext";
+import { NotificationProvider } from "./context/notificationContext.jsx";
 import { CartProvider } from "./context/cartContext";
 import ManageProducts from "./pages/manageProducts";
+import ProxyCatalog from "./pages/ProxyCatalog";
 import ManageMyProducts from "./pages/manageMyProducts";
 import ManageCategories from "./pages/ManageCategories";
 import ManageOrders from "./pages/ManageOrders";
@@ -25,6 +27,9 @@ import Settings from "./pages/Settings";
 import Landing from "./pages/Landing";
 import OrderSummary from "./pages/OrderSummary";
 import Payment from "./pages/Payment";
+import OfflineOrders from "./pages/OfflineOrders";
+import OrderTracking from "./pages/OrderTracking";
+import ShippingPanel from "./pages/ShippingPanel";
 
 
 // Protected Route
@@ -106,6 +111,7 @@ function App() {
     <Router>
     <ErrorBoundary>
       
+  <NotificationProvider>
   <ThemeProvider>
   <SupportButton />
   {/* Profile floating button removed per design — no floating profile in header/side */}
@@ -140,12 +146,16 @@ function App() {
         <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
         <Route path="/retailer/dashboard" element={<ProtectedRoute><RetailerDashboard /></ProtectedRoute>} />
   <Route path="/manage-products" element={<ProtectedRoute><ManageMyProducts /></ProtectedRoute>} />
+  <Route path="/proxy-catalog" element={<ProtectedRoute><ProxyCatalog /></ProtectedRoute>} />
 
         {/* (removed /dashboard) root now points to /admin */}
   <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
   <Route path="/admin/products" element={<AdminRoute><ManageProducts /></AdminRoute>} />
   <Route path="/admin/categories" element={<AdminRoute><ManageCategories /></AdminRoute>} />
   <Route path="/admin/orders" element={<AdminRoute><ManageOrders /></AdminRoute>} />
+  <Route path="/admin/offline-orders" element={<AdminRoute><OfflineOrders /></AdminRoute>} />
+  <Route path="/admin/order-tracking" element={<AdminRoute><OrderTracking /></AdminRoute>} />
+  <Route path="/admin/shipping" element={<AdminRoute><ShippingPanel /></AdminRoute>} />
   <Route path="/admin/users" element={<AdminRoute><ManageUsers /></AdminRoute>} />
   <Route path="/admin/analytics" element={<AdminRoute><Analytics /></AdminRoute>} />
   <Route path="/admin/settings" element={<AdminRoute><Settings /></AdminRoute>} />
@@ -180,6 +190,7 @@ function App() {
         </Routes>
         </CartProvider>
       </ThemeProvider>
+      </NotificationProvider>
       </ErrorBoundary>
     </Router>
   );

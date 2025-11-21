@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 export default function ProductCard({ product, onAdd, hints }) {
+  const isProxy = !!product.proxy;
   return (
     <div className="product-card relative overflow-hidden rounded-2xl bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-white/30 p-4 shadow-[0_8px_32px_rgba(0,0,0,0.15)] flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
       {/* highlight / reflection layer */}
@@ -18,6 +19,9 @@ export default function ProductCard({ product, onAdd, hints }) {
         <div className="mt-2 flex flex-wrap gap-1">
           {product.region && (
             <span className="inline-flex items-center text-[11px] px-2 py-1 rounded-full bg-sky-100/80 text-black dark:text-black backdrop-blur-sm">{product.region}</span>
+          )}
+          {isProxy && (
+            <span className="inline-flex items-center text-[11px] px-2 py-1 rounded-full bg-amber-100 text-amber-800" title={`Margin ${product.marginPercent || 0}%`}>Proxy +{product.marginPercent || 0}%</span>
           )}
           {hints?.local && (
             <span className="inline-flex items-center text-[11px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Local</span>
