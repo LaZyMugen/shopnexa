@@ -15,6 +15,7 @@ import { useAuth } from "../context/authContext";
 function StoreInner() {
   const { theme, setTheme } = useTheme();
   const [products, setProducts] = useState([]);
+  const [trendingIds, setTrendingIds] = useState([]); // randomly selected trending product IDs
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
@@ -121,7 +122,15 @@ function StoreInner() {
           return false;
         };
         const cleaned = merged.filter(p => !looksLikePlaceholder(p));
-        if (mounted) setProducts(cleaned);
+        if (mounted) {
+          setProducts(cleaned);
+          // Select 7-8 random products as trending (stable for session)
+          const idsArr = cleaned.map(p => p.id);
+          const shuffled = [...idsArr].sort(() => Math.random() - 0.5);
+          const chosen = shuffled.slice(0, Math.min(8, shuffled.length));
+          setTrendingIds(chosen);
+          try { localStorage.setItem('trending_ids', JSON.stringify(chosen)); } catch {/* ignore */}
+        }
       } catch {
         // fallback to local products when server fails
         const local = (() => { try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch { return []; } })();
@@ -163,7 +172,14 @@ function StoreInner() {
           return false;
         };
         const cleaned = merged.filter(p => !looksLikePlaceholder(p));
-        if (mounted) setProducts(cleaned);
+        if (mounted) {
+          setProducts(cleaned);
+          const idsArr = cleaned.map(p => p.id);
+          const shuffled = [...idsArr].sort(() => Math.random() - 0.5);
+          const chosen = shuffled.slice(0, Math.min(8, shuffled.length));
+          setTrendingIds(chosen);
+          try { localStorage.setItem('trending_ids', JSON.stringify(chosen)); } catch {/* ignore */}
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -440,7 +456,7 @@ function StoreInner() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search products..."
-                className="search-input ml-4 px-3 py-2 rounded-lg bg-white/70 border border-white/30 outline-none text-sm text-slate-900"
+                className="search-input ml-12 px-3 py-2 rounded-lg bg-white/70 border border-white/30 outline-none text-sm text-slate-900"
               />
             </div>
           </div>
@@ -516,8 +532,9 @@ function StoreInner() {
                   fastShip = Number.isFinite(etaDays) && etaDays <= 2;
                 }
                 const hints = { distanceKm, shipCost, etaDays, fastShip, local };
+                const trending = trendingIds.includes(p.id);
                 return (
-                  <ProductCard key={p.id} product={p} onAdd={() => addItemWithStockCheck(p, 1)} hints={hints} />
+                  <ProductCard key={p.id} product={{...p, trending}} onAdd={() => addItemWithStockCheck(p, 1)} hints={hints} />
                 );
               })}
               {filtered.length === 0 && (

@@ -10,14 +10,23 @@ export default function Profile() {
   const [profile, setProfile] = useState({ name: "", age: "", location: "" });
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState("");
+  const [ordersKey, setOrdersKey] = useState(0);
 
   // Load/save profile details from localStorage (demo)
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("user_profile");
-      if (raw) setProfile(JSON.parse(raw));
+      // Initialize/clear profile to requested defaults:
+      // - Name: first part of user's email (before @)
+      // - Age: 20
+      // - Location: Bits Pilani Hyderabad Campus
+      const email = user?.email || '';
+      const nameFromEmail = email.includes('@') ? email.split('@')[0] : email;
+      const defaults = { name: nameFromEmail || '', age: '20', location: 'Bits Pilani Hyderabad Campus' };
+      // Apply defaults and persist them so the UI shows the cleared values immediately
+      setProfile(defaults);
+      try { localStorage.setItem('user_profile', JSON.stringify(defaults)); } catch (e) { /* ignore storage errors */ }
     } catch (err) {
-      console.warn('Failed to load user_profile from localStorage', err);
+      console.warn('Failed to initialize user_profile defaults', err);
     }
   }, []);
 
@@ -41,7 +50,21 @@ export default function Profile() {
       console.warn('Failed to read demo_orders from localStorage');
       return [];
     }
-  }, []);
+  }, [ordersKey]);
+
+  const clearAllOrders = () => {
+    try {
+      if (!window.confirm('Clear all past demo orders? This cannot be undone.')) return;
+      localStorage.removeItem('demo_orders');
+      setOrdersKey(k => k + 1);
+      setMessage('All past orders cleared');
+      setTimeout(() => setMessage(''), 2000);
+    } catch (err) {
+      console.warn('Failed to clear demo_orders', err);
+      setMessage('Failed to clear orders');
+      setTimeout(() => setMessage(''), 2000);
+    }
+  };
 
   const repeatOrder = (order) => {
     if (!order?.items?.length) return;
@@ -95,7 +118,12 @@ export default function Profile() {
 
         {/* Orders history */}
   <div className="rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 ring-1 ring-white/30 shadow p-5 text-slate-900 dark:text-white">
-          <div className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white mb-4">Recent orders</div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">Recent orders</div>
+            <div className="flex items-center gap-2">
+              <button onClick={clearAllOrders} className="px-2 py-1 rounded bg-red-600 text-white text-sm">Clear orders</button>
+            </div>
+          </div>
           {orders.length === 0 ? (
             <div className="text-sm text-slate-600 dark:text-white/70">No orders yet. Explore the <button onClick={()=>navigate('/store')} className="underline">store</button>.</div>
           ) : (
