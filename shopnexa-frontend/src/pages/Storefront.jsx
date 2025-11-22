@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import LocationInput from "../components/LocationInput";
-import { demoRetailers, haversineKm, estimateDays } from "../data/retailers";
+import { demoRetailers, haversineKm, estimateDays, regionCoords } from "../data/retailers";
 import SkeletonProductCard from "../components/SkeletonProductCard";
 import api from "../api/axios";
 import { useCart } from "../context/cartContext";
@@ -29,6 +29,38 @@ function StoreInner() {
 
   const { items, addItem, totals, updateQty, removeItem, clearCart } = useCart();
   const { groups } = useCart();
+  const [cartMessage, setCartMessage] = useState('');
+  const [cartMessageType, setCartMessageType] = useState('info');
+
+  const addItemWithStockCheck = (product, qty = 1) => {
+    try {
+      const existing = items.find((it) => it.id === product.id);
+      const current = existing?.qty || 0;
+      const max = Number(product.stock ?? 999);
+      if (current + qty > max) {
+        setCartMessageType('error');
+        setCartMessage('Maximum possible item count reached for the item stock available!');
+        setTimeout(() => { setCartMessage(''); setCartMessageType('info'); }, 2000);
+        return;
+      }
+      addItem(product, qty);
+    } catch (err) {
+      console.warn('addItemWithStockCheck failed', err);
+      addItem(product, qty);
+    }
+  };
+
+  const handleIncrease = (it) => {
+    const max = Number(it.stock ?? 999);
+    const current = it.qty || 0;
+    if (current >= max) {
+      setCartMessageType('error');
+      setCartMessage('Maximum possible item count reached for the item stock available!');
+      setTimeout(() => { setCartMessage(''); setCartMessageType('info'); }, 2000);
+      return;
+    }
+    updateQty(it.id, Math.min(max, current + 1));
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -72,7 +104,24 @@ function StoreInner() {
         for (const pp of proxyProducts) {
           if (!ids.has(pp.id)) merged.unshift(pp);
         }
-        if (mounted) setProducts(merged);
+        // Remove obvious placeholder/demo items while keeping real uploaded products.
+        const looksLikePlaceholder = (p) => {
+          try {
+            const name = (p.name || '').toLowerCase();
+            if (/\b(demo|placeholder|sample|test)\b/.test(name)) return true;
+            const img = p.image_url || p.imageBase64 || '';
+            if (typeof img === 'string') {
+              if (img.includes('/images/placeholders/') || img.includes('placeholder')) return true;
+              // tiny base64 (1x1 png) is a common placeholder; treat short strings as placeholder
+              if (img.indexOf('base64,') !== -1 && img.length < 200) return true;
+            }
+          } catch (e) {
+            /* ignore and keep product */
+          }
+          return false;
+        };
+        const cleaned = merged.filter(p => !looksLikePlaceholder(p));
+        if (mounted) setProducts(cleaned);
       } catch {
         // fallback to local products when server fails
         const local = (() => { try { return JSON.parse(localStorage.getItem('products') || '[]'); } catch { return []; } })();
@@ -98,7 +147,23 @@ function StoreInner() {
           };
         }).filter(Boolean);
         const merged = [...proxyProducts, ...localPublished];
-        if (mounted) setProducts(merged);
+        // Filter placeholder/demo products in the fallback path as well
+        const looksLikePlaceholder = (p) => {
+          try {
+            const name = (p.name || '').toLowerCase();
+            if (/\b(demo|placeholder|sample|test)\b/.test(name)) return true;
+            const img = p.image_url || p.imageBase64 || '';
+            if (typeof img === 'string') {
+              if (img.includes('/images/placeholders/') || img.includes('placeholder')) return true;
+              if (img.indexOf('base64,') !== -1 && img.length < 200) return true;
+            }
+          } catch (e) {
+            /* ignore and keep product */
+          }
+          return false;
+        };
+        const cleaned = merged.filter(p => !looksLikePlaceholder(p));
+        if (mounted) setProducts(cleaned);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -147,6 +212,95 @@ function StoreInner() {
     return { minShipping, minDistance };
   }, [selectedLocation]);
 
+  // Per-item shipping estimator (per unit). Uses explicit retailer.shipping when present,
+  // otherwise estimates from item.region and the selected destination.
+  const estimateShippingPerUnit = (it) => {
+    const explicit = Number(it.retailer?.shipping);
+    if (isFinite(explicit) && explicit >= 0) return explicit;
+    const lat = Number(selectedLocation?.lat ?? selectedLocation?.geometry?.coordinates?.[1]);
+    const lon = Number(selectedLocation?.lon ?? selectedLocation?.geometry?.coordinates?.[0]);
+    let distanceKm = null;
+
+    if (isFinite(lat) && isFinite(lon)) {
+      // We have a destination: try to resolve item origin via region or nearest demo retailer
+      if (it.region) {
+        const norm = String(it.region).trim().toLowerCase();
+        const keys = Object.keys(regionCoords);
+        let regionKey = keys.find(k => k.toLowerCase() === norm);
+        if (!regionKey) regionKey = keys.find(k => norm.includes(k.toLowerCase()));
+        if (!regionKey) regionKey = keys.find(k => k.toLowerCase().includes(norm));
+        if (regionKey) {
+          const orig = regionCoords[regionKey];
+          const d = haversineKm(lat, lon, orig.lat, orig.lon);
+          if (isFinite(d)) distanceKm = d;
+        }
+      }
+      if (distanceKm == null) {
+        let minD = Infinity;
+        for (const r of demoRetailers) {
+          const d = haversineKm(lat, lon, r.lat, r.lon);
+          if (d < minD) minD = d;
+        }
+        if (isFinite(minD)) distanceKm = minD;
+      }
+    } else {
+      // No destination selected: fall back to retailer distance if available, otherwise use a conservative default
+      const retailDist = Number(it.retailer?.distance_km);
+      if (isFinite(retailDist)) distanceKm = retailDist;
+      else distanceKm = 100; // default distance so shipping isn't zero
+    }
+    // More realistic, varied shipping: deterministic but wider variability.
+    // Seeded helper (stable for same item+rounded-distance)
+    const hashStringToInt = (s) => {
+      let h = 0;
+      for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) - h) + s.charCodeAt(i);
+        h |= 0;
+      }
+      return Math.abs(h);
+    };
+    const seededRandom = (seed, min, max) => {
+      const h = hashStringToInt(seed + '::' + Math.floor(distanceKm).toString());
+      const r = (h % 10000) / 10000;
+      return min + r * (max - min);
+    };
+
+    const seed = `${it.id}::${it.region || 'nr'}::${Math.floor(distanceKm)}`;
+    // base shipping varies per item (10-60)
+    const base = Math.round(seededRandom(seed + '::base', 10, 60));
+    // per-km rate varies (0.8 - 4.0) and we bias higher for expensive items
+    let perKm = seededRandom(seed + '::perkm', 0.8, 4.0);
+    const price = Number(it.price || 0);
+    const weightProxy = Math.min(5, Math.max(0.5, price / 500)); // heuristic: price -> weight proxy
+    perKm = perKm * (1 + (weightProxy - 1) * 0.15);
+
+    // Percent surcharge depending on distance buckets (wider ranges than before)
+    let extraPercent = 0;
+    if (distanceKm < 200) {
+      extraPercent = seededRandom(seed + '::pct', 3, 8); // 3-8%
+    } else if (distanceKm < 500) {
+      extraPercent = seededRandom(seed + '::pct', 5, 12); // 5-12%
+    } else if (distanceKm < 1000) {
+      extraPercent = seededRandom(seed + '::pct', 10, 18); // 10-18%
+    } else {
+      extraPercent = seededRandom(seed + '::pct', 18, 30); // 18-30%
+    }
+
+    // Base shipping before percent: base + perKm * distance
+    const raw = base + perKm * distanceKm;
+    const percentAdd = raw * (extraPercent / 100);
+
+    // small deterministic jitter so values are not too uniform
+    const jitter = seededRandom(seed + '::jitter', -0.05, 0.12); // -5% .. +12%
+    const ship = raw + percentAdd;
+    const shipWithJitter = Math.max(0, ship * (1 + jitter));
+    // Round to nearest rupee for realism
+    return Math.round(shipWithJitter);
+  };
+
+  // Compute total shipping based on per-item estimates (used for summary box override)
+  const computedTotalShipping = items.reduce((s, it) => s + (estimateShippingPerUnit(it) * (it.qty || 0)), 0);
+
   const filtered = useMemo(() => {
     return products.filter((p) => {
       const nameLower = (p.categories?.name || p.category_name || "Unknown").toLowerCase();
@@ -167,9 +321,11 @@ function StoreInner() {
 
   // placeOrder was a demo helper; actual checkout uses /checkout route
 
-  // Force storefront to use a dark presentation regardless of global theme so it stays visually distinct.
-  // We still conditionally style elements that rely on light backgrounds, but page chrome is dark-only.
-  const isLightTheme = false; // override global theme for this page
+  // Respect global theme for text coloring in mixed/light areas (e.g. cart cards).
+  // Some earlier code forced a dark presentation; keep that behavior for chrome but
+  // ensure price/quantity text near +/- buttons is readable when the app theme is light.
+  const isLightTheme = theme === 'light';
+  const priceTextClass = isLightTheme ? 'text-slate-900' : 'text-white';
 
   return (
   <div className={`storefront-page relative min-h-screen md:pl-72 bg-[var(--app-bg)] text-white`}> 
@@ -270,7 +426,7 @@ function StoreInner() {
 
   <div className="max-w-7xl mx-auto p-6 md:p-8 relative z-10">
         <header className="mb-6">
-          <div className="grid grid-cols-3 items-center">
+            <div className="grid grid-cols-3 items-center">
             <div />
             <div />
             <div className="flex items-center justify-end gap-3 flex-wrap">
@@ -279,16 +435,13 @@ function StoreInner() {
               <AuthSellButton />
               {/* Logout visible when authenticated (component internally handles auth) */}
               <LogoutButton className="px-3 py-2 rounded bg-red-600 text-white text-sm hover:bg-red-500" />
+              {/* moved search input to replace the previous "Local specials" control */}
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search products..."
-                className="search-input px-3 py-2 rounded-lg bg-white/70 border border-white/30 outline-none text-sm text-slate-900"
+                className="search-input ml-4 px-3 py-2 rounded-lg bg-white/70 border border-white/30 outline-none text-sm text-slate-900"
               />
-              <label className="hidden md:flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={onlyLocal} onChange={(e) => setOnlyLocal(e.target.checked)} />
-                Local specials
-              </label>
             </div>
           </div>
         </header>
@@ -301,36 +454,70 @@ function StoreInner() {
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
               {Array.from({ length: 8 }).map((_, i) => (
                 <SkeletonProductCard key={i} />
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filtered.map((p) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                {filtered.map((p) => {
                 // personalization hints based on user-selected location
                 const lat = Number(selectedLocation?.lat ?? selectedLocation?.geometry?.coordinates?.[1]);
                 const lon = Number(selectedLocation?.lon ?? selectedLocation?.geometry?.coordinates?.[0]);
                 let distanceKm = null, shipCost = null, etaDays = null, local = false, fastShip = false;
                 if (isFinite(lat) && isFinite(lon)) {
-                  let minD = Infinity;
-                  let minShip = Infinity;
-                  for (const r of demoRetailers) {
-                    const d = haversineKm(lat, lon, r.lat, r.lon);
-                    const ship = (r.shipping_base + r.shipping_per_km * d);
-                    if (d < minD) minD = d;
-                    if (ship < minShip) minShip = ship;
+                  // If the product has a known region, prefer computing distance from that region's coords
+                  const region = p.region;
+                  if (region) {
+                    // Match region case-insensitively and allow substring matches for loose names
+                    const norm = String(region).trim().toLowerCase();
+                    const keys = Object.keys(regionCoords);
+                    let regionKey = keys.find(k => k.toLowerCase() === norm);
+                    if (!regionKey) regionKey = keys.find(k => norm.includes(k.toLowerCase()));
+                    if (!regionKey) regionKey = keys.find(k => k.toLowerCase().includes(norm));
+                    if (regionKey) {
+                      const orig = regionCoords[regionKey];
+                      const d = haversineKm(lat, lon, orig.lat, orig.lon);
+                      distanceKm = isFinite(d) ? d : null;
+                      // Simple shipping estimate for product origins (demo-friendly defaults)
+                      const base = 25; const perKm = 2;
+                      shipCost = distanceKm != null ? Math.round((base + perKm * distanceKm) * 100) / 100 : null;
+                      etaDays = distanceKm != null ? estimateDays(distanceKm) : null;
+                    } else {
+                      // Fallback: compute nearest demo retailer distance (previous behavior)
+                      let minD = Infinity;
+                      let minShip = Infinity;
+                      for (const r of demoRetailers) {
+                        const d = haversineKm(lat, lon, r.lat, r.lon);
+                        const ship = (r.shipping_base + r.shipping_per_km * d);
+                        if (d < minD) minD = d;
+                        if (ship < minShip) minShip = ship;
+                      }
+                      if (isFinite(minD)) distanceKm = minD;
+                      if (isFinite(minShip)) shipCost = Math.round(minShip * 100) / 100;
+                      if (isFinite(distanceKm)) etaDays = estimateDays(distanceKm);
+                    }
+                  } else {
+                    // Fallback: compute nearest demo retailer distance (previous behavior)
+                    let minD = Infinity;
+                    let minShip = Infinity;
+                    for (const r of demoRetailers) {
+                      const d = haversineKm(lat, lon, r.lat, r.lon);
+                      const ship = (r.shipping_base + r.shipping_per_km * d);
+                      if (d < minD) minD = d;
+                      if (ship < minShip) minShip = ship;
+                    }
+                    if (isFinite(minD)) distanceKm = minD;
+                    if (isFinite(minShip)) shipCost = Math.round(minShip * 100) / 100;
+                    if (isFinite(distanceKm)) etaDays = estimateDays(distanceKm);
                   }
-                  if (isFinite(minD)) distanceKm = minD;
-                  if (isFinite(minShip)) shipCost = Math.round(minShip * 100) / 100;
-                  if (isFinite(distanceKm)) etaDays = estimateDays(distanceKm);
                   local = !!p.region && isFinite(distanceKm) && distanceKm < 10;
                   fastShip = Number.isFinite(etaDays) && etaDays <= 2;
                 }
                 const hints = { distanceKm, shipCost, etaDays, fastShip, local };
                 return (
-                  <ProductCard key={p.id} product={p} onAdd={() => addItem(p, 1)} hints={hints} />
+                  <ProductCard key={p.id} product={p} onAdd={() => addItemWithStockCheck(p, 1)} hints={hints} />
                 );
               })}
               {filtered.length === 0 && (
@@ -343,12 +530,13 @@ function StoreInner() {
   {/* Cart Panel with retailer grouping */}
         <div className="fixed bottom-6 right-6 w-[340px]">
           <div className="rounded-2xl bg-white/10 backdrop-blur-lg border border-white/10 shadow-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
               <div className="font-semibold text-slate-900 flex items-center gap-1">Cart <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-white">{totals.count}</span></div>
               {items.length > 0 && (
                 <button onClick={clearCart} className="text-xs text-red-600 hover:underline">Clear</button>
               )}
             </div>
+            {cartMessage && <div className={`text-sm ${cartMessageType === 'error' ? 'text-red-400' : 'text-yellow-400'}`}>{cartMessage}</div>}
             <div className="max-h-56 overflow-auto pr-1 space-y-3">
               {items.map((it) => (
                 <div key={it.id} className="border rounded-lg p-3 bg-white/50 flex flex-col gap-1">
@@ -363,20 +551,27 @@ function StoreInner() {
                         <div className="mt-1 flex flex-wrap items-center gap-1">
                           <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700">
                             <span>{it.retailer.name}</span>
-                            {it.retailer.shipping != null && <span>Ship ₹{(Number(it.retailer.shipping) * it.qty).toFixed(2)}</span>}
+                            {it.retailer.shipping != null
+                              ? <span>Ship ₹{(Number(it.retailer.shipping) * it.qty).toFixed(2)}</span>
+                              : null
+                            }
                           </span>
                           {isFinite(it.deliveryDays) && (
                             <span className="inline-flex items-center text-[10px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ETA {it.deliveryDays}d</span>
                           )}
                         </div>
                       )}
+                      {/* Show estimated shipping when explicit retailer shipping is not available */}
+                      {it.retailer?.shipping == null && (
+                        <div className="mt-1 text-[11px] text-slate-600">Ship ₹{estimateShippingPerUnit(it).toFixed(2)}{it.qty ? ` × ${it.qty}` : ''}</div>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <div className="text-sm font-semibold">₹{(Number(it.price||0)*it.qty).toFixed(2)}</div>
+                      <div className={`text-sm font-semibold ${priceTextClass}`}>₹{(Number(it.price||0)*it.qty).toFixed(2)}</div>
                       <div className="flex items-center gap-1">
-                        <button className="px-2 py-1 bg-slate-100 rounded" onClick={() => updateQty(it.id, Math.max(1, (it.qty||1)-1))}>-</button>
-                        <div className="px-2 text-sm">{it.qty}</div>
-                        <button className="px-2 py-1 bg-slate-100 rounded" onClick={() => updateQty(it.id, (it.qty||1)+1)}>+</button>
+                        <button aria-label={`Decrease quantity for ${it.name}`} className="px-2 py-1 bg-black text-white rounded hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black" onClick={() => updateQty(it.id, Math.max(1, (it.qty||1)-1))}>-</button>
+                        <div className={`px-2 text-sm ${priceTextClass}`}>{it.qty}</div>
+                        <button aria-label={`Increase quantity for ${it.name}`} className="px-2 py-1 bg-black text-white rounded hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black" onClick={() => handleIncrease(it)}>+</button>
                       </div>
                       <button className="text-[10px] text-red-600" onClick={() => removeItem(it.id)}>Remove</button>
                     </div>
@@ -402,22 +597,28 @@ function StoreInner() {
                         </div>
                         <div className="text-xs text-slate-600">{g.items.length} item(s)</div>
                       </div>
-                      <div className="grid grid-cols-2 gap-x-2 text-[11px] text-slate-600">
-                        <div>Items:</div><div className="text-right">₹{g.itemsSubtotal.toFixed(2)}</div>
-                        <div>Shipping:</div><div className="text-right">₹{g.shippingSubtotal.toFixed(2)}</div>
-                        <div className="font-medium">Group total:</div><div className="text-right font-medium">₹{g.total.toFixed(2)}</div>
-                      </div>
+                      {(() => {
+                        const groupShipping = g.retailer ? g.shippingSubtotal : g.items.reduce((s, it) => s + (estimateShippingPerUnit(it) * (it.qty || 0)), 0);
+                        const groupTotal = (g.itemsSubtotal || 0) + groupShipping;
+                        return (
+                          <div className="grid grid-cols-2 gap-x-2 text-[11px] text-slate-600">
+                            <div>Items:</div><div className="text-right">₹{g.itemsSubtotal.toFixed(2)}</div>
+                            <div>Shipping:</div><div className="text-right">₹{groupShipping.toFixed(2)}</div>
+                            <div className="font-medium">Group total:</div><div className="text-right font-medium">₹{groupTotal.toFixed(2)}</div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
                 <div className="rounded-xl bg-slate-900 text-white p-4 space-y-1">
                   <div className="flex justify-between text-sm"><span>Items</span><span>₹{totals.itemsAmount.toFixed(2)}</span></div>
-                  <div className="flex justify-between text-sm"><span>Shipping</span><span>₹{totals.shippingAmount.toFixed(2)}</span></div>
-                  <div className="flex justify-between text-base font-semibold border-t border-white/20 pt-2"><span>Total</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-sm"><span>Shipping</span><span>₹{computedTotalShipping.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-base font-semibold border-t border-white/20 pt-2"><span>Total</span><span>₹{(totals.itemsAmount + computedTotalShipping).toFixed(2)}</span></div>
                 </div>
                 <Link
                   to="/checkout"
-                  onClick={() => { try { setTheme('light'); } catch {} }}
+                  onClick={() => { try { setTheme('light'); } catch (err) { console.warn('setTheme failed', err); } }}
                   className="block w-full text-center px-4 py-3 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"
                 >Checkout</Link>
               </div>

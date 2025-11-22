@@ -7,6 +7,9 @@ const USE_DEMO = true; // Force demo data only for now
 
 export default function ManageOrders() {
   const [orders, setOrders] = useState([]);
+  const [statusOverrides, setStatusOverrides] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('admin_order_status_overrides') || '{}'); } catch { return {}; }
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -51,7 +54,10 @@ export default function ManageOrders() {
   // Inject demo orders if none
   const displayOrders = useMemo(() => {
     // Always use demo list when USE_DEMO is true
-    if (!USE_DEMO && orders.length > 0) return orders;
+    if (!USE_DEMO && orders.length > 0) {
+      // apply any overrides on top of fetched orders
+      return orders.map(o => statusOverrides[o.id] ? { ...o, status: statusOverrides[o.id] } : o);
+    }
     const now = Date.now();
     const CUSTOMERS = ["Prassad", "Rosy", "Shashwat", "Baka", "Test"];
     const genOrderId = (i) => {
@@ -63,19 +69,43 @@ export default function ManageOrders() {
       const seq = String(1000 + i).slice(-4);
       return `SNX-${yy}${mm}${dd}-${seq}`;
     };
+    // deterministic pseudo-random date selection inside Oct 2025 and first week Nov 2025
+    const allDates = [];
+    const year = 2025;
+    // October 1..31 (use deterministic minute/second values so results are stable)
+    for (let d = 1; d <= 31; d++) {
+      const minute = (d * 7 + 13) % 60;
+      const second = (d * 11 + 17) % 60;
+      allDates.push(new Date(Date.UTC(year, 9, d, 10, minute, second)).toISOString());
+    }
+    // November 1..7 (first week)
+    for (let d = 1; d <= 7; d++) {
+      const minute = (d * 5 + 19) % 60;
+      const second = (d * 3 + 23) % 60;
+      allDates.push(new Date(Date.UTC(year, 10, d, 11, minute, second)).toISOString());
+    }
+    const detDate = (idx) => {
+      // simple deterministic LCG-like pseudo-random using idx to pick an index
+      const seed = (idx * 9301 + 49297) % 233280;
+      const rnd = seed / 233280;
+      const iSel = Math.floor(rnd * allDates.length);
+      return allDates[iSel];
+    };
+
     const mk = (i, status, amount, custIdx) => ({
       id: genOrderId(i),
       customer_name: CUSTOMERS[custIdx % CUSTOMERS.length],
       total_amount: amount,
       status,
-      created_at: new Date(now - i * 3600_000).toISOString(),
+      // deterministic created_at within Oct 2025 or early Nov 2025
+      created_at: detDate(i),
       _demo: true,
       _items: [
         { id: `itm-${i}-1`, product_id: `prod-${i}-A`, quantity: 1 + (i % 2), price_each: 199 },
         { id: `itm-${i}-2`, product_id: `prod-${i}-B`, quantity: 2, price_each: 99 }
       ]
     });
-    return [
+    const base = [
       mk(1, "pending", 398, 0),
       mk(2, "paid", 497, 1),
       mk(3, "shipped", 699, 2),
@@ -84,7 +114,9 @@ export default function ManageOrders() {
       mk(6, "paid", 899, 0),
       mk(7, "completed", 1499, 1),
     ];
-  }, [orders]);
+    // apply overrides while preserving created_at
+    return base.map(o => statusOverrides[o.id] ? { ...o, status: statusOverrides[o.id] } : o);
+  }, [orders, statusOverrides]);
 
   // Derived filtered list
   const filtered = useMemo(() => {
@@ -119,6 +151,12 @@ export default function ManageOrders() {
     setUpdatingId(order.id);
     // optimistic local update
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: newStatus } : o));
+    // record override so demo data reflects selection and persists during session
+    setStatusOverrides(prev => {
+      const next = { ...prev, [order.id]: newStatus };
+      try { sessionStorage.setItem('admin_order_status_overrides', JSON.stringify(next)); } catch {}
+      return next;
+    });
     try {
       if (!USE_DEMO && !order._demo && !order.id.startsWith("DEMO")) {
         await api.put(`/orders/${order.id}/status`, { status: newStatus });
@@ -127,6 +165,12 @@ export default function ManageOrders() {
       console.warn("status update error", e);
       // revert on error
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: order.status } : o));
+      setStatusOverrides(prev => {
+        const next = { ...prev };
+        if (order.id in next) next[order.id] = order.status;
+        try { sessionStorage.setItem('admin_order_status_overrides', JSON.stringify(next)); } catch {}
+        return next;
+      });
     } finally {
       setUpdatingId(null);
     }
@@ -168,6 +212,20 @@ export default function ManageOrders() {
               <button onClick={()=>setSearch("")} className="absolute right-2 top-2 text-xs text-slate-500 hover:text-slate-700">Clear</button>
             )}
           </div>
+        </div>
+
+        {/* Status legend */}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+          <span className="font-semibold mr-1">Legend:</span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-50 ring-1 ring-emerald-200">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" /> Completed
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-50 ring-1 ring-yellow-200">
+            <span className="inline-block w-2 h-2 rounded-full bg-yellow-500" /> Paid / Shipped
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-50 ring-1 ring-red-200">
+            <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Pending / Cancelled
+          </span>
         </div>
 
         <div className="rounded-2xl bg-white/60 backdrop-blur border border-white/30 shadow-sm overflow-auto">
@@ -224,7 +282,15 @@ export default function ManageOrders() {
               )}
               {!loading && !error && filtered.map(o => (
                 <>
-                  <tr key={o.id} className="hover:bg-white/40 transition">
+                  <tr
+                    key={o.id}
+                    className={`transition ${
+                      o.status === 'completed' ? 'bg-emerald-50 ring-1 ring-emerald-200' :
+                      (o.status === 'paid' || o.status === 'shipped') ? 'bg-yellow-50 ring-1 ring-yellow-200' :
+                      (o.status === 'pending' || o.status === 'cancelled') ? 'bg-red-50 ring-1 ring-red-200 hover:bg-red-100' :
+                      'hover:bg-white/40'
+                    }`}
+                  >
                     <td className="px-4 py-3 font-medium">{o.id.slice(0,10)}</td>
                     <td className="px-4 py-3">{o.customer_name || o.user_id || '—'}</td>
                     <td className="px-4 py-3">₹{(o.total_amount ?? 0).toFixed(2)}</td>

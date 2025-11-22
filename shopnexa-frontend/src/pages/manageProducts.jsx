@@ -17,7 +17,7 @@ export default function ManageProducts() {
 	const [order, setOrder] = useState("desc");
 	const [showCreate, setShowCreate] = useState(false);
 	const [creating, setCreating] = useState(false);
-	const [form, setForm] = useState({ name: "", description: "", price: "", stock: "", category_id: "", region: "", image_url: "" });
+	const [form, setForm] = useState({ name: "", description: "", price: "", stock: "", selectedCategories: [], region: "", image_url: "" });
 	const [editing, setEditing] = useState(null);
 	const [savingEdit, setSavingEdit] = useState(false);
 
@@ -50,46 +50,57 @@ export default function ManageProducts() {
 	useEffect(() => { loadCategories(); }, []);
 	useEffect(() => { loadProducts(); }, [loadProducts]);
 
-	const resetForm = () => setForm({ name: "", description: "", price: "", stock: "", category_id: "", region: "", image_url: "" });
+	const resetForm = () => setForm({ name: "", description: "", price: "", stock: "", selectedCategories: [], region: "", image_url: "" });
 
-		const submitCreate = async (e) => {
+			const submitCreate = async (e) => {
 			e.preventDefault();
-			if (!form.name.trim()) return;
+				if (!form.name.trim()) return;
+				if (!form.selectedCategories || form.selectedCategories.length === 0) { setError("Select at least one category"); return; }
 			setCreating(true); setError("");
-			const tempId = "temp-" + Date.now();
-			const optimistic = { id: tempId, ...form, price: Number(form.price || 0), stock: Number(form.stock || 0), created_at: new Date().toISOString() };
-			setProducts(prev => [...prev, optimistic]);
-			try {
-				const payload = { ...form, price: Number(form.price || 0), stock: Number(form.stock || 0) };
-				const res = await api.post("/products", payload);
-				const created = res.data?.data?.[0];
-				if (created) {
-					setProducts(prev => prev.map(p => p.id === tempId ? created : p));
-				} else {
-					await loadProducts();
+				// Create one product per selected category (simple approach without DB schema change)
+				const basePayload = { name: form.name, description: form.description, price: Number(form.price||0), stock: Number(form.stock||0), region: form.region, image_url: form.image_url };
+				const createdList = [];
+				try {
+					for (const catId of form.selectedCategories) {
+						const tempId = `temp-${catId}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+						const optimistic = { id: tempId, ...basePayload, category_id: catId, created_at: new Date().toISOString() };
+						setProducts(prev => [...prev, optimistic]);
+						try {
+							const payload = { ...basePayload, category_id: catId };
+							const res = await api.post("/products", payload);
+							const created = res.data?.data?.[0];
+							if (created) {
+								setProducts(prev => prev.map(p => p.id === tempId ? created : p));
+								createdList.push(created);
+							} else {
+								// fallback reload
+								await loadProducts();
+							}
+						} catch (innerErr) {
+							// remove failed optimistic entry
+							setProducts(prev => prev.filter(p => p.id !== tempId));
+							console.warn('multi-create failure for category', catId, innerErr);
+							setError(innerErr.response?.data?.error || innerErr.message || 'Create failed for one category');
+						}
+					}
+					resetForm();
+					setShowCreate(false);
+				} finally {
+					setCreating(false);
 				}
-				resetForm();
-				setShowCreate(false);
-			} catch (er) {
-				// rollback
-				setProducts(prev => prev.filter(p => p.id !== tempId));
-				setError(er.response?.data?.error || er.message || "Create failed");
-			} finally {
-				setCreating(false);
-			}
 		};
 
 	const startEdit = (p) => {
 		setEditing(p);
-		setForm({
-			name: p.name ?? "",
-			description: p.description ?? "",
-			price: p.price ?? "",
-			stock: p.stock ?? "",
-			category_id: p.category_id ?? "",
-			region: p.region ?? "",
-			image_url: p.image_url ?? "",
-		});
+			setForm({
+				name: p.name ?? "",
+				description: p.description ?? "",
+				price: p.price ?? "",
+				stock: p.stock ?? "",
+				selectedCategories: p.category_id ? [p.category_id] : [],
+				region: p.region ?? "",
+				image_url: p.image_url ?? "",
+			});
 		setShowCreate(true);
 	};
 
@@ -98,7 +109,7 @@ export default function ManageProducts() {
 			if (!editing) return;
 			setSavingEdit(true); setError("");
 			const original = editing;
-			const payload = { ...form, price: Number(form.price || 0), stock: Number(form.stock || 0) };
+				const payload = { ...form, price: Number(form.price || 0), stock: Number(form.stock || 0), category_id: form.selectedCategories[0] || editing.category_id };
 			// optimistic update
 			setProducts(prev => prev.map(p => p.id === original.id ? { ...p, ...payload } : p));
 			try {
@@ -294,15 +305,29 @@ export default function ManageProducts() {
 									</Field>
 								</div>
 								<div className="grid grid-cols-2 gap-4">
-									<Field label="Category">
-										<select
-											className="w-full px-3 py-2 rounded border border-slate-300 text-sm bg-white"
-											value={form.category_id}
-											onChange={(e)=>setForm(f=>({...f,category_id:e.target.value}))}
-										>
-											<option value="">None</option>
-											{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-										</select>
+									<Field label="Categories (select one or more)">
+										<div className="flex flex-col gap-1 max-h-32 overflow-auto border rounded p-2 bg-white">
+											{categories.map(c => {
+												const checked = form.selectedCategories.includes(c.id);
+												return (
+													<label key={c.id} className="flex items-center gap-2 text-xs text-slate-700">
+														<input
+															type="checkbox"
+															checked={checked}
+															onChange={(e)=>setForm(f=>({
+																...f,
+																selectedCategories: e.target.checked
+																	? [...f.selectedCategories, c.id]
+																	: f.selectedCategories.filter(x=>x!==c.id)
+															}))}
+														/>
+														<span>{c.name}</span>
+													</label>
+												);
+											})}
+											{categories.length===0 && <div className="text-xs text-slate-500">No categories</div>}
+										</div>
+										<div className="mt-1 text-[10px] text-slate-500">Will create one product per selected category.</div>
 									</Field>
 									<Field label="Region">
 										<input

@@ -166,6 +166,23 @@ export default function ManageUsers() {
           </div>
         </div>
 
+        {/* Role legend */}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+          <span className="font-semibold mr-1">Legend:</span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-violet-50 ring-1 ring-violet-200 text-[12px]"> 
+            <span className="inline-block w-2 h-2 rounded-full bg-violet-400" /> Admin
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-50 ring-1 ring-emerald-200 text-[12px]">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" /> Retailer
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-50 ring-1 ring-amber-200 text-[12px]">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-500" /> Wholesaler
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-50 ring-1 ring-sky-200 text-[12px]">
+            <span className="inline-block w-2 h-2 rounded-full bg-sky-500" /> Customer
+          </span>
+        </div>
+
         {/* Table */}
         <div className="rounded-2xl bg-white/60 backdrop-blur border border-white/30 shadow-sm overflow-auto">
           <table className="min-w-full text-sm">
@@ -189,18 +206,29 @@ export default function ManageUsers() {
                 <tr><td colSpan={5} className="p-6 text-center text-slate-600">No users match current filters.</td></tr>
               )}
               {!loading && !error && filtered.map(u => (
-                <tr key={u.id} className="hover:bg-white/40 transition">
+                <tr
+                  key={u.id}
+                  role="row"
+                  aria-label={`User role: ${u.role}. Row color indicates ${u.role === 'admin' ? 'purple' : u.role === 'retailer' ? 'green' : u.role === 'wholesaler' ? 'amber' : u.role === 'customer' ? 'blue' : 'default'}`}
+                  className={`transition ${
+                    u.role === 'admin' ? 'bg-violet-50 ring-1 ring-violet-200' :
+                    u.role === 'retailer' ? 'bg-emerald-50 ring-1 ring-emerald-200' :
+                    u.role === 'wholesaler' ? 'bg-amber-50 ring-1 ring-amber-200' :
+                    u.role === 'customer' ? 'bg-sky-50 ring-1 ring-sky-200' :
+                    'hover:bg-white/40'
+                  }`}
+                >
                   <td className="px-4 py-3 font-medium">{(u.id||"").slice(0,8)}</td>
                   <td className="px-4 py-3">{u.name || "—"}</td>
                   <td className="px-4 py-3">{u.email || "—"}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium
-                      ${u.role==="admin"?"bg-indigo-600 text-white":""}
-                      ${u.role==="customer"?"bg-sky-100 text-sky-700":""}
-                      ${u.role==="retailer"?"bg-emerald-100 text-emerald-700":""}
-                      ${u.role==="wholesaler"?"bg-amber-100 text-amber-800":""}
-                      ${!['admin','customer','retailer','wholesaler'].includes(u.role)?"bg-gray-200 text-gray-700":""}
-                    `}>{u.role}</span>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                      u.role === 'admin' ? 'bg-violet-50 text-violet-800 ring-1 ring-violet-200' :
+                      u.role === 'retailer' ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200' :
+                      u.role === 'wholesaler' ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-200' :
+                      u.role === 'customer' ? 'bg-sky-50 text-sky-800 ring-1 ring-sky-200' :
+                      'bg-gray-200 text-gray-700'
+                    }`}>{u.role}</span>
                   </td>
                   <td className="px-4 py-3">{u.created_at? new Date(u.created_at).toLocaleDateString():"—"}</td>
                 </tr>

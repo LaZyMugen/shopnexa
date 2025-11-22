@@ -141,9 +141,9 @@ export default function Checkout() {
 
                       <div className="mt-3 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => updateQty(it.id, Math.max(1, (it.qty||1) - 1))} className="px-3 py-1 bg-slate-100 rounded">-</button>
+                          <button aria-label={`Decrease quantity for ${it.name}`} onClick={() => updateQty(it.id, Math.max(1, (it.qty||1) - 1))} className="px-3 py-1 bg-black text-white rounded hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black">-</button>
                           <div className="px-3 py-1 border rounded">{it.qty}</div>
-                          <button onClick={() => updateQty(it.id, (it.qty||1) + 1)} className="px-3 py-1 bg-slate-100 rounded">+</button>
+                          <button aria-label={`Increase quantity for ${it.name}`} onClick={() => updateQty(it.id, (it.qty||1) + 1)} className="px-3 py-1 bg-black text-white rounded hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-black">+</button>
                           <button onClick={() => removeItem(it.id)} className="text-sm text-red-600 ml-3">Remove</button>
                         </div>
                         {isFinite(it.deliveryDays) && <div className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ETA {it.deliveryDays}d</div>}

@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useCart } from "../context/cartContext";
 import CheckoutProgress from '../components/CheckoutProgress';
 
 function loadOrder(id) {
@@ -14,6 +15,7 @@ export default function Payment() {
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
   const [method, setMethod] = useState(null); // 'card' | 'upi' | 'emi'
+  const [codFee, setCodFee] = useState(0);
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [discount, setDiscount] = useState(0);
@@ -33,6 +35,19 @@ export default function Payment() {
   const [showEmiSetupModal, setShowEmiSetupModal] = useState(false);
   // Payment issues / contact modal state
   const [showPaymentIssueModal, setShowPaymentIssueModal] = useState(false);
+  const [showCodModal, setShowCodModal] = useState(false);
+  const [showPlacedModal, setShowPlacedModal] = useState(false);
+  const { clearCart } = useCart();
+
+  // Deterministic COD fee derived from order id so it doesn't change on reload.
+  const computeCodFee = (id) => {
+    if (!id) return 20;
+    // simple stable hash: sum of char codes
+    let sum = 0;
+    for (let i = 0; i < id.length; i++) sum = (sum + id.charCodeAt(i)) | 0;
+    const v = Math.abs(sum) % 11; // 0..10
+    return 20 + v; // 20..30
+  };
   const [issueName, setIssueName] = useState('');
   const [issueProblem, setIssueProblem] = useState('');
   const [issueContact, setIssueContact] = useState('');
@@ -44,9 +59,11 @@ export default function Payment() {
   const totals = useMemo(() => {
     if (!order) return { items: 0, shipping: 0, total: 0, finalTotal: 0 };
     const base = order.totals?.total || 0;
-    const finalTotal = Math.max(0, Math.round((base - discount) * 100) / 100);
-    return { ...order.totals, finalTotal };
-  }, [order, discount]);
+    // Include COD convenience fee when applicable
+    const fee = Number(codFee || 0);
+    const finalTotal = Math.max(0, Math.round((base - discount + fee) * 100) / 100);
+    return { ...order.totals, convenienceFee: fee, finalTotal };
+  }, [order, discount, codFee]);
 
   const emiPlans = useMemo(() => {
     const P = totals.finalTotal || 0;
@@ -152,6 +169,11 @@ export default function Payment() {
       setShowCardModal(true);
       return;
     }
+    if (method === 'cod') {
+      // Show COD confirmation modal before persisting payment
+      setShowCodModal(true);
+      return;
+    }
     if (method === 'emi') {
       if (!selectedEmi) {
         setMessage('Please choose an EMI plan.');
@@ -165,7 +187,7 @@ export default function Payment() {
     setProcessing(true);
     try {
       const payments = JSON.parse(localStorage.getItem('payments') || '[]');
-      payments.push({ id: `pay-${Date.now()}`, orderId, method, discount, totalPaid: totals.finalTotal, created: new Date().toISOString() });
+      payments.push({ id: `pay-${Date.now()}`, orderId, method, discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString() });
       localStorage.setItem('payments', JSON.stringify(payments));
       setMessage('Payment successful.');
       setTimeout(() => navigate('/store'), 1200);
@@ -192,6 +214,16 @@ export default function Payment() {
       setShowUpiModal(false);
     }
   }, [showUpiModal, upiTimeLeft]);
+
+  // Helper component to auto-close the placed overlay after a short delay
+  function AutoClosePlaced({ onClose, delay = 3000 }) {
+    useEffect(() => {
+      if (!onClose) return;
+      const t = setTimeout(() => onClose(), delay);
+      return () => clearTimeout(t);
+    }, [onClose, delay]);
+    return null;
+  }
 
   // Removed dynamic QR generation; using static SVG asset instead
 
@@ -226,7 +258,7 @@ export default function Payment() {
         <div className="mb-6">
           <h2 className="text-sm font-semibold text-slate-700 mb-3">Pay in full</h2>
           <div className="space-y-3">
-            <button onClick={()=>setMethod('card')} className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='card'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
+            <button onClick={()=>{ setMethod('card'); setCodFee(0); }} className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='card'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
               {/* Reverted to simple inline image sizing */}
               <img src="/file.svg" alt="Visa / Card Payments" className="h-10 w-auto" />
               <div className="flex-1">
@@ -234,7 +266,7 @@ export default function Payment() {
                 <div className="text-xs text-slate-500">Visa, Mastercard, RuPay supported</div>
               </div>
             </button>
-            <button onClick={()=>setMethod('upi')} className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='upi'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
+            <button onClick={()=>{ setMethod('upi'); setCodFee(0); }} className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='upi'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
               <img src="/upi-logo.svg" alt="UPI Unified Payments Interface" className="h-10 w-auto" />
               <div className="flex-1">
                 <div className="font-medium">Pay with UPI</div>
@@ -244,11 +276,32 @@ export default function Payment() {
           </div>
         </div>
 
+        {/* Cash on Delivery */}
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-3">Other</h2>
+          <div className="space-y-3">
+            <button onClick={() => {
+                // deterministic fee per order
+                const fee = computeCodFee(order?.id);
+                setCodFee(fee);
+                setMethod('cod');
+              }}
+              className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='cod'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
+              <span className="text-xl">🧾</span>
+              <div className="flex-1">
+                <div className="font-medium">Cash on Delivery (COD)</div>
+                <div className="text-xs text-slate-500">Pay when the courier delivers — convenience fee applies</div>
+              </div>
+              {method === 'cod' && <div className="text-sm text-emerald-700 font-semibold">₹{(codFee||0).toFixed(2)}</div>}
+            </button>
+          </div>
+        </div>
+
         {/* Pay in installments */}
         <div className="mb-6">
           <h2 className="text-sm font-semibold text-slate-700 mb-3">Pay in installments</h2>
           <div className="space-y-3">
-            <button onClick={()=>setMethod('emi')} className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='emi'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
+            <button onClick={()=>{ setMethod('emi'); setCodFee(0); }} className={`w-full flex items-center gap-4 rounded-lg border px-5 py-4 text-left transition ${method==='emi'?'border-indigo-500 bg-indigo-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
               <span className="text-xl">🗓️</span>
               <div className="flex-1">
                 <div className="font-medium">Credit card EMI</div>
@@ -321,6 +374,9 @@ export default function Payment() {
             )}
           </div>
           <div className="flex justify-between text-sm mb-2"><span>Shipping</span><span>₹{(order.totals.shipping).toFixed(2)}</span></div>
+                  {totals.convenienceFee > 0 && (
+                    <div className="flex justify-between text-sm mb-2"><span>Convenience fee</span><span>₹{(totals.convenienceFee).toFixed(2)}</span></div>
+                  )}
           {method === 'emi' && selectedEmi ? (
             <div className="mt-3 border-t pt-3">
               <div className="flex items-center justify-between text-base font-semibold">
@@ -415,6 +471,71 @@ export default function Payment() {
         </div>
       )}
 
+      {/* COD Modal */}
+      {showCodModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={()=>setShowCodModal(false)} />
+          <div className="relative z-10 w-full max-w-md mx-auto">
+            <div className="bg-white rounded-xl shadow-lg border p-6">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="text-lg font-semibold">Confirm Cash on Delivery</h3>
+                <button onClick={()=>setShowCodModal(false)} className="text-slate-500 hover:text-slate-700">✕</button>
+              </div>
+              <div className="text-sm text-slate-700 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">Payable on delivery</span>
+                  <span className="text-emerald-600 font-semibold text-lg">{formatINR(totals.finalTotal)}</span>
+                </div>
+                <div className="mb-2">Expected delivery: <span className="font-medium">{order.estimatedDays ?? 'N/A'} day(s)</span></div>
+                <div className="mb-2">Mode of payment on delivery will be <span className="font-medium">cash or UPI at door</span>.</div>
+                <div className="text-xs text-slate-500">A small convenience fee applies for COD where selected.</div>
+              </div>
+              <div className="pt-3 flex gap-2">
+                <button
+                  onClick={() => {
+                      try {
+                        const payments = JSON.parse(localStorage.getItem('payments') || '[]');
+                        payments.push({ id: `pay-${Date.now()}`, orderId, method: 'cod', discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString() });
+                        localStorage.setItem('payments', JSON.stringify(payments));
+
+                        // Mark order as placed in order_summaries (if present) and also append to demo_orders
+                        try {
+                          const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
+                          const idx = all.findIndex(o => o.id === orderId);
+                          const placedAt = new Date().toISOString();
+                          if (idx >= 0) {
+                            all[idx] = { ...all[idx], status: 'placed', payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 }, placedAt };
+                          } else {
+                            all.push({ id: orderId || `local-${Date.now()}`, items: order.items || [], totals: order.totals || {}, estimatedDays: order.estimatedDays || null, created: order.created || new Date().toISOString(), status: 'placed', payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 }, placedAt });
+                          }
+                          localStorage.setItem('order_summaries', JSON.stringify(all));
+                        } catch { /* best-effort */ }
+
+                        try {
+                          const saved = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+                          const newId = orderId || `demo-${Date.now()}`;
+                          saved.push({ id: newId, items: order.items || [], totals: order.totals || {}, estimatedDays: order.estimatedDays || null, created: new Date().toISOString(), payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 } });
+                          localStorage.setItem('demo_orders', JSON.stringify(saved));
+                        } catch { /* best-effort */ }
+
+                        // Clear cart and show placed overlay
+                        clearCart();
+                        setShowCodModal(false);
+                        setShowPlacedModal(true);
+                      } catch (e) {
+                        console.warn('cod confirm failed', e);
+                        setMessage('Failed to place order.');
+                      }
+                    }}
+                  className="flex-1 px-4 py-3 rounded bg-emerald-600 text-white text-sm font-medium"
+                >Confirm to pay (COD)</button>
+                <button onClick={()=>setShowCodModal(false)} className="px-4 py-3 rounded border border-slate-300 text-sm">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* EMI Plans Modal */}
       {showEmiModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -448,7 +569,7 @@ export default function Payment() {
                         className={`mt-3 w-full px-3 py-2 rounded text-sm border ${isSelected ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 hover:border-slate-400'}`}
                         onClick={() => {
                           setSelectedEmiId(p.id);
-                          setMethod('emi');
+                          setMethod('emi'); setCodFee(0);
                           setMessage(`Selected ${p.months} months EMI @ ${(p.apr*100).toFixed(1)}% APR`);
                           setTimeout(()=>setMessage(''), 3000);
                         }}
@@ -463,6 +584,26 @@ export default function Payment() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Placed overlay (congratulations) */}
+      {showPlacedModal && (
+        <div className="fixed inset-0 z-60 grid place-items-center">
+          <div className="absolute inset-0 backdrop-blur-sm bg-black/40" />
+          <div className="relative z-10 max-w-lg w-full mx-auto p-8 bg-white rounded-xl shadow-2xl text-center">
+            <h2 className="text-2xl font-semibold text-emerald-700 mb-4">Congratulations!</h2>
+            <p className="text-slate-700 mb-6">You have successfully placed the order.</p>
+            <div className="flex justify-center gap-3">
+              <button onClick={() => { setShowPlacedModal(false); navigate('/orders'); }} className="px-4 py-2 rounded bg-emerald-600 text-white">View Orders</button>
+              <button onClick={() => { setShowPlacedModal(false); navigate('/store'); }} className="px-4 py-2 rounded border">Continue Shopping</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-close placed overlay after a short delay and redirect to orders */}
+      {showPlacedModal && (
+        <AutoClosePlaced onClose={() => { setShowPlacedModal(false); navigate('/orders'); }} />
       )}
 
       {/* Card Modal */}
@@ -528,7 +669,7 @@ export default function Payment() {
                       }
                       try {
                         const payments = JSON.parse(localStorage.getItem('payments') || '[]');
-                        payments.push({ id: `pay-${Date.now()}`, orderId, method: 'card', discount, totalPaid: totals.finalTotal, created: new Date().toISOString() });
+                        payments.push({ id: `pay-${Date.now()}`, orderId, method: 'card', discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString() });
                         localStorage.setItem('payments', JSON.stringify(payments));
                         setShowCardModal(false);
                         setMessage('Payment successful.');
@@ -660,6 +801,7 @@ export default function Payment() {
                           orderId,
                           method: 'emi',
                           discount,
+                          convenienceFee: totals.convenienceFee || 0,
                           totalPaid: totals.finalTotal,
                           emi: {
                             id: selectedEmi.id,

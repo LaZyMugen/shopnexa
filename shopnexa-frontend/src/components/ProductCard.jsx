@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 export default function ProductCard({ product, onAdd, hints }) {
   const isProxy = !!product.proxy;
   return (
-    <div className="product-card relative overflow-hidden rounded-2xl bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-white/30 p-4 shadow-[0_8px_32px_rgba(0,0,0,0.15)] flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
+  <div className="product-card relative overflow-hidden rounded-2xl bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-white/30 p-6 shadow-[0_10px_36px_rgba(0,0,0,0.16)] flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_14px_44px_rgba(0,0,0,0.26)]">
       {/* highlight / reflection layer */}
   <div className="inner-reflection pointer-events-none absolute -top-6 -left-6 w-2/3 h-2/3 rounded-full bg-gradient-to-br from-white/60 via-white/20 to-transparent opacity-40" />
       {product.image_url && (
         <Link to={`/product/${product.id}`} className="block mb-3">
-          <img src={product.image_url} alt={product.name} loading="lazy" decoding="async" className="h-40 w-full object-cover rounded-xl" />
+          <img src={product.image_url} alt={product.name} loading="lazy" decoding="async" className="h-56 w-full object-cover rounded-xl" />
         </Link>
       )}
       <div className="flex-1">
@@ -43,7 +43,7 @@ export default function ProductCard({ product, onAdd, hints }) {
           )}
         </div>
       </div>
-      <button onClick={onAdd} className="mt-4 w-full rounded-lg bg-gradient-to-r from-fuchsia-600 via-pink-600 to-purple-600 text-white py-2 text-sm font-medium tracking-wide shadow-[0_4px_12px_rgba(217,70,239,0.45)] hover:shadow-[0_6px_16px_rgba(217,70,239,0.55)] hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-pink-300/60">
+      <button onClick={onAdd} className="mt-4 w-full rounded-lg bg-gradient-to-r from-fuchsia-600 via-pink-600 to-purple-600 text-white py-3 text-sm font-medium tracking-wide shadow-[0_6px_16px_rgba(217,70,239,0.45)] hover:shadow-[0_8px_20px_rgba(217,70,239,0.55)] hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-pink-300/60">
         Add to Cart
       </button>
     </div>
