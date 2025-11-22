@@ -228,7 +228,7 @@ export default function Landing() {
                   </p>
 
                   <p className={`about-paragraph text-slate-800 max-w-7xl mx-auto mt-6 ${showPara2 ? 'animate-about-3' : 'opacity-0'}`}>
-                    Designed for both Android and Web, ShopNexa offers smart search, tailored recommendations, real-time stock visibility, and transparent pricing. It also promotes local businesses by highlighting region-specific products based on user location. With secure payments, easy order placement, and live order tracking, ShopNexa streamlines the entire shopping journey. Our mission is to empower users with convenience while helping local retailers grow in a digital-first world.
+                    Designed for Web, ShopNexa offers smart search, tailored recommendations, real-time stock visibility, and transparent pricing. It also promotes local businesses by highlighting region-specific products based on user location. With secure payments, easy order placement, and live order tracking, ShopNexa streamlines the entire shopping journey. Our mission is to empower users with convenience while helping local retailers grow in a digital-first world.
                   </p>
                 </div>
               </div>

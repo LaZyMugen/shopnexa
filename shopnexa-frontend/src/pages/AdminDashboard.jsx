@@ -22,7 +22,11 @@ export default function AdminDashboard() {
   const [metrics, setMetrics] = useState(null);
   const [metricsError, setMetricsError] = useState(false);
   const [recentFeedback, setRecentFeedback] = useState([]);
+  // Stable demo seed (persisted per session) used when real data unavailable so KPIs & charts stay in sync
+  const [demoSeed, setDemoSeed] = useState(null);
+  const [timeframe, setTimeframe] = useState('90d'); // '90d' | '30d' | '7d'
   const sseRef = useRef(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -111,6 +115,77 @@ export default function AdminDashboard() {
     return () => { isMounted = false; };
   }, [reloadTick]);
 
+  // Initialize demo seed once per session for consistent fallback values (revenue < 100k requirement)
+  useEffect(() => {
+    if (demoSeed) return;
+    try {
+      const cached = sessionStorage.getItem('admin_demo_seed');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Legacy seed compatibility: if old shape (no daySegments) regenerate new seed instead
+        if (parsed && parsed.daySegments && parsed.daySegments['90d'] && parsed.version === 'v2') {
+          setDemoSeed(parsed);
+          return; // keep existing v2 seed
+        }
+        // Old shape had direct revenue/aov/orders/customers etc. We'll discard and rebuild to avoid 0 KPIs.
+      }
+    } catch {/* ignore parse */}
+
+    // Monotonic timeframe seed values: ensure 7d < 30d < 90d for each metric
+    // Chosen plausible, "gullible" demo figures
+    const seven = { revenue: 5200, orders: 65, users: 9, aov: 80 }; // aov independent so it can increase
+    const thirty = { revenue: 18250, orders: 280, users: 28, aov: 65 }; // keep aov slightly lower than 7d to reflect smaller basket trend
+    const ninety = { revenue: 47478, orders: 846, users: 70, aov: 546 }; // explicit override retained
+    // Adjust to strictly ascending where required:
+    // Ensure revenue ascending (already is), orders ascending, users ascending.
+    // AOV: we keep 30d < 7d < 90d to show higher short-term basket, but still increasing by overall timeframe length (30d<7d<90d acceptable).
+
+    // Proxy KPIs: ascending across timeframe length
+    const proxy7 = { listings: 5, potential: 7500, margin: 1250 };
+    const proxy30 = { listings: 16, potential: 24500, margin: 4100 };
+    const proxy90 = { listings: 42, potential: 62500, margin: 10450 };
+
+    // Category distribution (fixed plausible spread; can scale later)
+    const categoryDist = [
+      { name: 'Electronics', count: 118 },
+      { name: 'Fashion', count: 86 },
+      { name: 'Home', count: 63 },
+      { name: 'Beauty', count: 47 },
+      { name: 'Sports', count: 41 },
+    ];
+
+    // Orders series for last 90 days (wave pattern) to support timeframe slicing
+    const baseSeed = Date.now() >> 8;
+    const ordersSeries = (() => {
+      const arr = [];
+      const today = new Date();
+      for (let i = 89; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const mod = (baseSeed + i) % 17; // 0-16
+        // produce moderate volume, spike every ~11 days
+        let count = 4 + (mod % 9) + ((i % 11) === 0 ? 8 : 0); // 4-21
+        // Slight upward drift toward recent days
+        const driftFactor = (90 - i) / 90; // 0..1
+        count = Math.round(count + driftFactor * 3);
+        arr.push({ date: d.toISOString().slice(0, 10), count });
+      }
+      return arr;
+    })();
+
+    const seed = {
+      version: 'v2',
+      daySegments: { '90d': ninety, '30d': thirty, '7d': seven },
+      proxy: { '90d': proxy90, '30d': proxy30, '7d': proxy7 },
+      categoryDist,
+      ordersSeries,
+      // timeframe-specific fulfillment as requested
+      fulfillmentPct: { '7d': '94%', '30d': '92%', '90d': '87%' },
+    };
+    try { sessionStorage.setItem('admin_demo_seed', JSON.stringify(seed)); } catch {/* ignore */}
+    setDemoSeed(seed);
+  }, [demoSeed]);
+
   // SSE subscription for feedback-new events
   useEffect(() => {
     const url = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api') + '/events';
@@ -126,10 +201,63 @@ export default function AdminDashboard() {
   }, []);
 
   // Derived metrics
-  const totalProducts = metrics?.totalProducts ?? products.length;
-  const totalOrders = metrics?.totalOrders ?? orders.length;
-  const totalCustomers = metrics?.customerCount ?? users.filter(u => u.role === "customer").length;
+  // Timeframe aware displays (prefer real metrics if available else seed segments)
+  const segmentRaw = demoSeed?.daySegments?.[timeframe];
+  // Legacy fallback if previous session stored old seed shape without daySegments
+  const legacySegment = (!segmentRaw && demoSeed && typeof demoSeed.revenue === 'number') ? {
+    revenue: demoSeed.revenue,
+    aov: demoSeed.aov,
+    orders: demoSeed.orders,
+    users: demoSeed.customers
+  } : null;
+  const segment = segmentRaw || legacySegment;
+  // If we have a v2 demo seed, prefer the seed's segment values (so overview stays consistent with selected timeframe)
+  const preferSeed = Boolean(demoSeed && demoSeed.version === 'v2' && segment);
+  const totalOrders = preferSeed
+    ? (segment?.orders || 0)
+    : ((typeof metrics?.totalOrders === 'number' && metrics.totalOrders > 0) ? metrics.totalOrders : (segment?.orders || orders.length || 0));
+  const totalCustomers = preferSeed
+    ? (segment?.users || 0)
+    : ((typeof metrics?.customerCount === 'number' && metrics.customerCount > 0) ? metrics.customerCount : (segment?.users || users.filter(u => u.role === "customer").length || 0));
+  // Products fallback: prefer metrics when positive else local products length
+  const totalProducts = (typeof metrics?.totalProducts === 'number' && metrics.totalProducts > 0)
+    ? metrics.totalProducts
+    : products.length;
   const lowStock = metrics?.lowStock ?? products.filter(p => Number(p.stock ?? 9999) <= 5);
+  // Revenue & AOV (average order value) with fallbacks
+  // Force seed segment overrides when metrics or computed revenue are missing / zero
+  const computedOrdersRevenue = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const backendRevenue = metrics?.totalRevenue;
+  const explicitRevenue = segment?.revenue;
+  // If backendRevenue is a positive number, prefer it, else fall back to computedOrdersRevenue if >0, else seed segment revenue
+  const totalRevenue = (typeof backendRevenue === 'number' && backendRevenue > 0)
+    ? backendRevenue
+    : (computedOrdersRevenue > 0 ? computedOrdersRevenue : (explicitRevenue || 0));
+  // Preserve explicit AOV override if provided in segment; if absent recompute from whichever revenue we show
+  const averageOrderValueRaw = (typeof segment?.aov === 'number')
+    ? segment.aov
+    : (totalOrders > 0 ? (totalRevenue / totalOrders) : 0);
+  const formatINR = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
+  // Unified fallback display using demo seed (kept below 100k revenue)
+  const revenueDisplay = formatINR(totalRevenue > 0 ? totalRevenue : (explicitRevenue || 0));
+  const aovDisplay = formatINR(averageOrderValueRaw > 0 ? averageOrderValueRaw : (segment?.aov || 0));
+  // Fulfillment changes by timeframe when seed available
+  const fulfillmentDisplay = (() => {
+    // prefer any segment-level fulfillment first
+    if (segment && (typeof segment.fulfillmentPct === 'string' || typeof segment.fulfillment === 'string')) {
+      return segment.fulfillmentPct || segment.fulfillment;
+    }
+    // demoSeed may expose either fulfillmentPct (mapping) or legacy single 'fulfillment' string
+    if (demoSeed) {
+      if (demoSeed.fulfillmentPct) return (demoSeed.fulfillmentPct[timeframe] || demoSeed.fulfillmentPct['90d']);
+      if (typeof demoSeed.fulfillment === 'string') return demoSeed.fulfillment;
+    }
+    // last-resort fallback
+    return 'N/A';
+  })();
+  const proxyListingsDisplay = demoSeed?.proxy?.[timeframe]?.listings || 0;
+  const proxyPotentialDisplay = formatINR(demoSeed?.proxy?.[timeframe]?.potential || 0);
+  const proxyMarginDisplay = formatINR(demoSeed?.proxy?.[timeframe]?.margin || 0);
 
   const ordersByDay = useMemo(() => {
     if (metrics?.salesByDay) return metrics.salesByDay.map(r => ({ date: r.date, count: r.count }));
@@ -139,8 +267,10 @@ export default function AdminDashboard() {
       if (!d) continue;
       map[d] = (map[d] || 0) + 1;
     }
-    return Object.entries(map).map(([date, count]) => ({ date, count }));
-  }, [orders, metrics]);
+    const arr = Object.entries(map).map(([date, count]) => ({ date, count }));
+    if (arr.length === 0 && demoSeed?.ordersSeries) return demoSeed.ordersSeries;
+    return arr;
+  }, [orders, metrics, demoSeed]);
 
   const categoryDist = useMemo(() => {
     if (metrics?.categoryDistribution) {
@@ -153,8 +283,10 @@ export default function AdminDashboard() {
         map[cat] = (map[cat] || 0) + (it.quantity || 1);
       }
     }
-    return Object.entries(map).map(([name, count]) => ({ name, count }));
-  }, [orders, metrics]);
+    const arr = Object.entries(map).map(([name, count]) => ({ name, count }));
+    if (arr.length === 0 && demoSeed?.categoryDist) return demoSeed.categoryDist;
+    return arr;
+  }, [orders, metrics, demoSeed]);
 
   const recentOrders = useMemo(() => {
     return [...orders]
@@ -164,30 +296,17 @@ export default function AdminDashboard() {
 
   // Fallbacks to keep the dashboard informative when there's no data
   const displayOrdersByDay = useMemo(() => {
-    if (ordersByDay && ordersByDay.length > 0) return ordersByDay;
-    // Generate a simple 14-day demo series
-    const arr = [];
-    const today = new Date();
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      // deterministic small pattern 0-7
-      const count = (d.getDate() % 7) + (i % 2);
-      arr.push({ date: d.toISOString().slice(0, 10), count });
-    }
-    return arr;
-  }, [ordersByDay]);
+    const base = (ordersByDay && ordersByDay.length > 0) ? ordersByDay : (demoSeed?.ordersSeries || []);
+    if (timeframe === '90d') return base.slice(-90);
+    if (timeframe === '30d') return base.slice(-30);
+    if (timeframe === '7d') return base.slice(-7);
+    return base;
+  }, [ordersByDay, demoSeed, timeframe]);
 
   const displayCategoryDist = useMemo(() => {
     if (categoryDist && categoryDist.length > 0) return categoryDist;
-    return [
-      { name: "Electronics", count: 12 },
-      { name: "Fashion", count: 8 },
-      { name: "Home", count: 5 },
-      { name: "Beauty", count: 4 },
-      { name: "Sports", count: 3 },
-    ];
-  }, [categoryDist]);
+    return demoSeed?.categoryDist || [];
+  }, [categoryDist, demoSeed]);
 
   const displayRecentOrders = useMemo(() => {
     if (recentOrders && recentOrders.length > 0) return recentOrders;
@@ -219,23 +338,27 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        <header className="flex items-center justify-between">
-          <div>
+        <header className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex flex-col">
             <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-slate-900">Overview</h1>
-            <p className="text-sm text-slate-600">ShopNexa Dashboard</p>
+            <p className="text-sm text-slate-600">Seeded performance snapshot</p>
           </div>
-          {!loading && (productsError || ordersError || usersError || metricsError) && (
-            <div className="text-xs text-red-600">
-              {productsError && <span className="mr-2">Products failed</span>}
-              {ordersError && <span className="mr-2">Orders failed</span>}
-              {usersError && <span className="mr-2">Users failed</span>}
-              {metricsError && <span className="mr-2">Metrics failed</span>}
+          <div className="flex items-center gap-2 text-xs bg-white/50 backdrop-blur px-2 py-1 rounded-lg border border-white/30">
+            {['90d','30d','7d'].map(tf => (
               <button
-                onClick={() => setReloadTick((t) => t + 1)}
-                className="ml-3 px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700"
-              >
-                Retry
-              </button>
+                key={tf}
+                onClick={() => setTimeframe(tf)}
+                className={`px-2 py-1 rounded ${timeframe===tf? 'bg-blue-600 text-white shadow' : 'hover:bg-blue-50'}`}
+              >{tf}</button>
+            ))}
+            <button onClick={() => setShowDebug(s => !s)} className="px-2 py-1 rounded border ml-2 text-[11px]">{showDebug ? 'Hide seed' : 'Show seed'}</button>
+          </div>
+          {/* Removed per request: orders failed retry banner. Show only minimal error indicator if products failed. */}
+          {!loading && (productsError || usersError || metricsError) && (
+            <div className="text-[10px] text-amber-600">
+              {productsError && <span className="mr-2">Products unreachable</span>}
+              {usersError && <span className="mr-2">Users unreachable</span>}
+              {metricsError && <span className="mr-2">Metrics unreachable</span>}
             </div>
           )}
         </header>
@@ -243,11 +366,19 @@ export default function AdminDashboard() {
         {!loading && (
           <>
             {/* KPI row */}
+            {showDebug && (
+              <div className="rounded p-3 bg-white/40 border border-white/20 text-xs text-slate-700">
+                <div className="font-medium mb-1">Seed debug</div>
+                <pre className="whitespace-pre-wrap break-words text-[12px] max-h-40 overflow-auto">{JSON.stringify({ timeframe, demoSeed: demoSeed ? { version: demoSeed.version, daySegments: demoSeed.daySegments, proxy: demoSeed.proxy, fulfillment: demoSeed.fulfillmentPct } : null, segment, totalOrders, totalCustomers, totalRevenue, averageOrderValueRaw, revenueDisplay, aovDisplay, fulfillmentDisplay }, null, 2)}</pre>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <GlassCard title="Customers" value={usersError ? "-" : totalCustomers} />
-              <GlassCard title="Products" value={productsError ? "-" : totalProducts} />
-              <GlassCard title="Orders" value={ordersError ? "-" : totalOrders} />
-              <GlassCard title="Low Stock" value={productsError ? "-" : lowStock.length} subtitle="<= 5 units" />
+              <GlassCard title="Revenue" value={revenueDisplay} subtitle={`${timeframe} gross`} />
+              <GlassCard title="AOV" value={aovDisplay} subtitle={`${timeframe} avg`} />
+              <GlassCard title="Products" value={totalProducts} subtitle="Catalog" />
+              <GlassCard title="Proxy Listings" value={proxyListingsDisplay} subtitle={`${timeframe}`} />
+              <GlassCard title="Proxy Potential" value={proxyPotentialDisplay} subtitle={`${timeframe} est.`} />
+              <GlassCard title="Proxy Margin" value={proxyMarginDisplay} subtitle={`${timeframe} realised`} />
             </div>
 
             {/* Charts row */}
@@ -296,7 +427,7 @@ export default function AdminDashboard() {
                 </div>
                 {/* Local pending products from demo localStorage */}
                 <div className="mt-4">
-                  <div className="mb-2 text-sm text-slate-700 font-medium">Pending local products (demo)</div>
+                  <div className="mb-2 text-sm text-slate-700 font-medium">Pending local products</div>
                   <div className="rounded-2xl bg-white/50 backdrop-blur-md border border-white/20 p-4 shadow-sm">
                     <LocalPendingProducts />
                   </div>
@@ -332,6 +463,25 @@ export default function AdminDashboard() {
       </div>
     </AdminLayout>
   );
+}
+
+// Demo number generators (deterministic-ish per session)
+function fakeDemo(min, max) {
+  const span = max - min;
+  const seed = Date.now() >> 8; // coarse time seed
+  const val = min + (seed % (span + 1));
+  return val;
+}
+function fakePercent() {
+  const seed = Date.now() >> 10;
+  const base = 88 + (seed % 7); // 88-94
+  return base + '%';
+}
+function fakeMoney(min, max) {
+  const span = max - min;
+  const seed = Date.now() >> 9;
+  const val = min + (seed % (span + 1));
+  return val;
 }
 
 function LocalPendingProducts() {

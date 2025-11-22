@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useCart } from "../context/cartContext";
 import CheckoutProgress from '../components/CheckoutProgress';
+import { useAuth } from "../context/authContext";
 
 function loadOrder(id) {
   try {
@@ -38,6 +39,27 @@ export default function Payment() {
   const [showCodModal, setShowCodModal] = useState(false);
   const [showPlacedModal, setShowPlacedModal] = useState(false);
   const { clearCart } = useCart();
+  const { user } = useAuth();
+  // Derive email robustly (covers demo fallback flows where auth context may be cleared)
+  const derivedEmail = useMemo(() => {
+    if (user?.email) return user.email;
+    try {
+      const token = localStorage.getItem('token');
+      if (token && token.startsWith('__demo_token__')) {
+        const all = JSON.parse(localStorage.getItem('demo_users') || '[]');
+        if (token.includes(':')) {
+          const id = token.split(':')[1];
+          const found = all.find(u => u.id === id);
+          if (found?.email) return found.email;
+        }
+        // fallback: last demo user
+        if (all.length) return all[all.length - 1].email;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }, [user]);
+  const [codPlacedAt, setCodPlacedAt] = useState(null); // timestamp when COD placed overlay shown
+  const MIN_PLACED_VISIBLE_MS = 10000; // must persist at least 10s
 
   // Deterministic COD fee derived from order id so it doesn't change on reload.
   const computeCodFee = (id) => {
@@ -197,6 +219,7 @@ export default function Payment() {
       setProcessing(false);
     }
   };
+
 
   // UPI countdown timer and timeout behavior
   useEffect(() => {
@@ -467,6 +490,100 @@ export default function Payment() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* COD Modal */}
+      {showCodModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={()=>setShowCodModal(false)} />
+          <div className="relative z-10 w-full max-w-md mx-auto">
+            <div className="bg-white rounded-xl shadow-lg border p-6">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="text-lg font-semibold">Confirm Cash on Delivery</h3>
+                <button onClick={()=>setShowCodModal(false)} className="text-slate-500 hover:text-slate-700">✕</button>
+              </div>
+              <div className="text-sm text-slate-700 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">Payable on delivery</span>
+                  <span className="text-emerald-600 font-semibold text-lg">{formatINR(totals.finalTotal)}</span>
+                </div>
+                <div className="mb-2">Expected delivery: <span className="font-medium">{order.estimatedDays ?? 'N/A'} day(s)</span></div>
+                <div className="mb-2">Mode of payment at door: <span className="font-medium">Cash or UPI</span></div>
+                <div className="text-xs text-slate-500">A convenience fee is already included in the total if applicable.</div>
+              </div>
+              <div className="pt-3 flex gap-2">
+                <button
+                  onClick={() => {
+                    try {
+                      const payments = JSON.parse(localStorage.getItem('payments') || '[]');
+                      payments.push({ id: `pay-${Date.now()}`, orderId, method: 'cod', discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString() });
+                      localStorage.setItem('payments', JSON.stringify(payments));
+
+                      // Update order_summaries status
+                      try {
+                        const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
+                        const idx = all.findIndex(o => o.id === orderId);
+                        const placedAt = new Date().toISOString();
+                        if (idx >= 0) {
+                          all[idx] = { ...all[idx], status: 'placed', payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 }, placedAt };
+                        } else {
+                          all.push({ id: orderId || `local-${Date.now()}`, items: order.items || [], totals: order.totals || {}, estimatedDays: order.estimatedDays || null, created: order.created || new Date().toISOString(), status: 'placed', payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 }, placedAt });
+                        }
+                        localStorage.setItem('order_summaries', JSON.stringify(all));
+                      } catch { /* ignore */ }
+
+                      // Append to demo_orders for dashboard demo flows
+                      try {
+                        const saved = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+                        const newId = orderId || `demo-${Date.now()}`;
+                        saved.push({ id: newId, items: order.items || [], totals: order.totals || {}, estimatedDays: order.estimatedDays || null, created: new Date().toISOString(), payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 } });
+                        localStorage.setItem('demo_orders', JSON.stringify(saved));
+                      } catch { /* ignore */ }
+
+                      clearCart();
+                      setShowCodModal(false);
+                      setCodPlacedAt(Date.now());
+                      setShowPlacedModal(true);
+                    } catch (e) {
+                      console.warn('cod confirm failed', e);
+                      setMessage('Failed to place order.');
+                    }
+                  }}
+                  className="flex-1 px-4 py-3 rounded bg-emerald-600 text-white text-sm font-medium"
+                >Confirm to pay (COD)</button>
+                <button onClick={()=>setShowCodModal(false)} className="px-4 py-3 rounded border border-slate-300 text-sm">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order placed overlay with 10s lock */}
+      {showPlacedModal && (
+        <div className="fixed inset-0 z-60 grid place-items-center">
+          <div className="absolute inset-0 backdrop-blur-sm bg-black/40" />
+          <div className="relative z-10 max-w-xl w-full mx-auto p-8 bg-white rounded-2xl shadow-2xl text-center border border-emerald-200">
+            <h2 className="text-2xl font-semibold text-emerald-700 mb-2">Congratulations 🎉</h2>
+            <p className="text-sm leading-relaxed text-slate-700 mb-6">
+              You have placed your order successfully.<br />
+              A confirmatory mail will be sent to <span className="font-medium text-emerald-600">{derivedEmail || user?.email || 'your registered email'}</span>.<br />
+              <span className="font-semibold text-slate-800">Thanks for shopping with us!</span>
+            </p>
+            <div className="flex flex-wrap justify-center gap-4">
+              <button
+                disabled={Date.now() - (codPlacedAt || 0) < MIN_PLACED_VISIBLE_MS}
+                onClick={() => { if (Date.now() - (codPlacedAt || 0) >= MIN_PLACED_VISIBLE_MS) { setShowPlacedModal(false); navigate('/orders'); } }}
+                className="px-5 py-3 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >View Orders</button>
+              <button
+                disabled={Date.now() - (codPlacedAt || 0) < MIN_PLACED_VISIBLE_MS}
+                onClick={() => { if (Date.now() - (codPlacedAt || 0) >= MIN_PLACED_VISIBLE_MS) { setShowPlacedModal(false); navigate('/store'); } }}
+                className="px-5 py-3 rounded-lg border border-slate-300 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              >Continue Shopping</button>
+            </div>
+            <div className="mt-5 text-[11px] text-slate-500">Buttons unlock after 10s to prevent accidental closure.</div>
           </div>
         </div>
       )}

@@ -232,16 +232,22 @@ export default function ProductDetails() {
     setSubmittingFb(true);
     const timestamp = new Date().toISOString();
     try {
-      await api.post(`/products/${id}/feedback`, { rating, comment });
-      // Optimistic local entry so it appears immediately in historical section
-      appendLocalFeedback({
+      const optimisticEntry = {
         id: `local-${Date.now()}`,
         rating,
         comment: comment.trim(),
         created_at: timestamp,
         local: true,
-        username: ['Riya123','ishan9','madking03','TechNomad','AquaLeaf','Zenify','PixelPilot','FluxCoder'][Math.floor(Math.random()*8)]
-      });
+          // mark optimistic/local submissions as coming from "you"
+          username: 'you',
+        optimistic: true
+      };
+      // Immediately show in live feedback list
+      setFeedback(prev => [optimisticEntry, ...prev.filter(f => !(f.optimistic && f.comment === optimisticEntry.comment && f.rating === optimisticEntry.rating))]);
+      // Persist to historical list
+      appendLocalFeedback(optimisticEntry);
+      // Fire API request (will be mirrored by SSE later). If it fails we still keep optimistic entry.
+      await api.post(`/products/${id}/feedback`, { rating, comment });
       setRating(0); setComment("");
       // SSE will also bring in the server version, duplicates filtered by id mismatch (different id) — acceptable demo.
     } catch (e) {
@@ -357,13 +363,21 @@ export default function ProductDetails() {
         </div>
         <ul className="space-y-3">
           {feedback.map((f,i)=>(
-            <li key={f.created_at+String(i)} className="p-3 rounded border bg-white/70 backdrop-blur">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Rating: {f.rating}★</span>
-                <span className="text-[10px] text-slate-500">{new Date(f.created_at).toLocaleString()}</span>
-              </div>
-              {f.comment && <div className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{f.comment}</div>}
-            </li>
+              <li key={f.created_at+String(i)} className="p-3 rounded border bg-white/70 backdrop-blur">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium">Rating: {f.rating}★</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">{new Date(f.created_at).toLocaleString()}</span>
+                </div>
+                {/* Username / author pill for optimistic/local submissions */}
+                {f.optimistic || f.local ? (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold">you</span>
+                  </div>
+                ) : null}
+                {f.comment && <div className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">{f.comment}</div>}
+              </li>
           ))}
           {feedback.length===0 && <li className="text-sm text-slate-500">No feedback yet.</li>}
         </ul>
@@ -443,11 +457,39 @@ function RetailerList({ location, retailers, onChoose, onUpdateRetailers, chosen
   const locLat = Number(location?.lat ?? location?.geometry?.coordinates?.[1]);
   const locLon = Number(location?.lon ?? location?.geometry?.coordinates?.[0]);
 
-  const enriched = (retailers || []).map((r) => {
+  // Build initial enriched list with deterministic base ETA days
+  let enriched = (retailers || []).map((r) => {
     const d = (isFinite(locLat) && isFinite(locLon)) ? haversineKm(locLat, locLon, r.lat, r.lon) : null;
     const shipping = d == null ? null : Math.round((r.shipping_base + r.shipping_per_km * d) * 100) / 100;
-    return { ...r, distance_km: d, shipping };
+    let etaDays = null;
+    if (d != null) {
+      const base = d <= 25 ? 1 : d <= 75 ? 2 : d <= 150 ? 3 : d <= 300 ? 4 : d <= 500 ? 5 : d <= 800 ? 6 : 7;
+      const idHash = (r.id * 2654435761) >>> 0; // multiplicative hash
+      const offset = (idHash % 3); // 0..2
+      etaDays = Math.min(base + offset, 12);
+    }
+    return { ...r, distance_km: d, shipping, etaDays };
   }).sort((a,b) => (a.distance_km ?? 9999) - (b.distance_km ?? 9999));
+
+  // Ensure uniqueness of etaDays across shippers by incrementing duplicates deterministically
+  const used = new Set();
+  enriched = enriched.map((r, idx) => {
+    let d = r.etaDays;
+    if (d == null) {
+      return { ...r, etaLabel: 'ETA: —', expectedLabel: '' };
+    }
+    while (used.has(d)) {
+      d = Math.min(d + 1, 14); // cap
+    }
+    used.add(d);
+    const arrivalDate = new Date(Date.now() + d * 24 * 60 * 60 * 1000);
+    const weekdayLong = arrivalDate.toLocaleDateString(undefined, { weekday: 'long' });
+    const dayNum = arrivalDate.toLocaleDateString(undefined, { day: 'numeric' });
+    const monthShort = arrivalDate.toLocaleDateString(undefined, { month: 'short' });
+    const etaLabel = `${d} day${d>1?'s':''}`;
+    const expectedLabel = `Expected delivery: ${weekdayLong}, ${dayNum} ${monthShort}`;
+    return { ...r, etaDays: d, etaLabel, expectedLabel };
+  });
 
   // Choose default if none selected
   useEffect(() => {
@@ -458,12 +500,19 @@ function RetailerList({ location, retailers, onChoose, onUpdateRetailers, chosen
   return (
     <div className="space-y-3">
       {enriched.map((r) => (
-        <div key={r.id} className={`p-3 border rounded ${chosenId === r.id ? 'bg-white' : 'bg-white/90'}`}>
+        <div
+          key={r.id}
+          className={`p-3 border rounded transition-colors ${chosenId === r.id ? 'bg-emerald-50 border-emerald-500 shadow-sm' : 'bg-white/90'}`}
+        >
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="font-medium">{r.name} {r.stock <= 5 && <span className="text-xs text-amber-700 ml-2">Low stock</span>}</div>
               <div className="text-xs text-slate-600">{r.address}</div>
               <div className="text-xs text-slate-500">{r.distance_km != null ? `${r.distance_km.toFixed(1)} km` : 'Unknown distance'}</div>
+              <div className="text-xs font-semibold mt-1">
+                <span className="text-emerald-600">{r.etaLabel}</span>
+                {r.expectedLabel && <span className="ml-2 text-emerald-700">{r.expectedLabel}</span>}
+              </div>
             </div>
             <div className="text-right">
               <div className="text-sm font-semibold">{r.shipping != null ? `₹${r.shipping}` : '—'}</div>
@@ -473,7 +522,7 @@ function RetailerList({ location, retailers, onChoose, onUpdateRetailers, chosen
           <div className="mt-2 flex items-center justify-end">
             <button
               onClick={() => onChoose(r.id)}
-              className={`px-3 py-1 rounded text-sm ${chosenId === r.id ? 'bg-slate-900 text-white' : 'bg-slate-100'}`}
+              className={`px-3 py-1 rounded text-sm ${chosenId === r.id ? 'bg-emerald-600 text-white' : 'bg-slate-100'}`}
             >{chosenId === r.id ? 'Selected' : 'Choose'}</button>
           </div>
         </div>
