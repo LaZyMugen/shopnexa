@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useCart } from "../context/cartContext";
 import CheckoutProgress from '../components/CheckoutProgress';
@@ -55,11 +55,12 @@ export default function Payment() {
         // fallback: last demo user
         if (all.length) return all[all.length - 1].email;
       }
-    } catch (e) { /* ignore */ }
+  } catch { /* ignore: demo token parsing failure */ }
     return null;
   }, [user]);
   const [codPlacedAt, setCodPlacedAt] = useState(null); // timestamp when COD placed overlay shown
   const MIN_PLACED_VISIBLE_MS = 10000; // must persist at least 10s
+  // Auto redirect removed; confirmation must be opened manually via button.
 
   // Deterministic COD fee derived from order id so it doesn't change on reload.
   const computeCodFee = (id) => {
@@ -117,6 +118,21 @@ export default function Payment() {
   const [rememberCard, setRememberCard] = useState(false);
   const [cvv, setCvv] = useState('');
   const [selectedCode, setSelectedCode] = useState('');
+  // Debug: log method changes to ensure button click updates state
+  useEffect(() => {
+    if (method) {
+      console.log('[Payment] method selected ->', method);
+    }
+  }, [method]);
+  // Bank & OTP states for card/EMI flows
+  const [selectedBank, setSelectedBank] = useState(null); // e.g. 'HDFC Bank'
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpDigits, setOtpDigits] = useState(['','','','']);
+  const [otpTimeLeft, setOtpTimeLeft] = useState(30); // seconds remaining (rounded up)
+  const [otpProgress, setOtpProgress] = useState(0); // 0..1 smooth fraction elapsed
+  const OTP_DURATION = 30; // seconds
+  const otpStartRef = useRef(null);
+  const [pendingPaymentKind, setPendingPaymentKind] = useState(null); // 'card' | 'emi'
   const percentApplied = useMemo(() => {
     if (!order) return 0;
     const itemsTotal = order.totals?.items || 0;
@@ -211,6 +227,8 @@ export default function Payment() {
       const payments = JSON.parse(localStorage.getItem('payments') || '[]');
       payments.push({ id: `pay-${Date.now()}`, orderId, method, discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString() });
       localStorage.setItem('payments', JSON.stringify(payments));
+
+      
       setMessage('Payment successful.');
       setTimeout(() => navigate('/store'), 1200);
     } catch {
@@ -238,15 +256,66 @@ export default function Payment() {
     }
   }, [showUpiModal, upiTimeLeft]);
 
-  // Helper component to auto-close the placed overlay after a short delay
-  function AutoClosePlaced({ onClose, delay = 3000 }) {
-    useEffect(() => {
-      if (!onClose) return;
-      const t = setTimeout(() => onClose(), delay);
-      return () => clearTimeout(t);
-    }, [onClose, delay]);
-    return null;
-  }
+  // Smooth OTP progress using requestAnimationFrame (fluid drain)
+  useEffect(() => {
+    if (!showOtpModal) return;
+    otpStartRef.current = performance.now();
+    setOtpProgress(0);
+    setOtpTimeLeft(OTP_DURATION);
+    let active = true;
+    function tick(now) {
+      if (!active) return;
+      const elapsed = (now - otpStartRef.current) / 1000; // seconds
+      const frac = Math.min(1, elapsed / OTP_DURATION);
+      setOtpProgress(frac);
+      const remaining = Math.max(0, OTP_DURATION - elapsed);
+      const secs = Math.ceil(remaining);
+      setOtpTimeLeft(secs);
+      if (frac < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+    return () => { active = false; };
+  }, [showOtpModal]);
+
+  const maskedPhoneForBank = useMemo(() => {
+    if (!selectedBank) return '+91 XXXXXXX846';
+    let h = 0; for (let i=0;i<selectedBank.length;i++) h = (h*31 + selectedBank.charCodeAt(i)) & 0xffffffff;
+    const last3 = String(Math.abs(h)%1000).padStart(3,'0');
+    return `+91 XXXXXXX${last3}`;
+  }, [selectedBank]);
+
+  const handleOtpConfirm = () => {
+    if (otpDigits.some(d => !d)) { setMessage('Enter all 4 OTP digits.'); return; }
+    try {
+      const payments = JSON.parse(localStorage.getItem('payments') || '[]');
+      const base = { id: `pay-${Date.now()}`, orderId, method: pendingPaymentKind, discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString(), bank: selectedBank };
+      if (pendingPaymentKind === 'emi' && selectedEmi) {
+        payments.push({
+          ...base,
+          emi: {
+            id: selectedEmi.id,
+            months: selectedEmi.months,
+            apr: selectedEmi.apr,
+            perMonth: selectedEmi.perMonth,
+            totalPayable: selectedEmi.totalPayable,
+            interest: selectedEmi.interest,
+          }
+        });
+      } else {
+        payments.push(base);
+      }
+      localStorage.setItem('payments', JSON.stringify(payments));
+      clearCart();
+      setShowOtpModal(false);
+      setCodPlacedAt(Date.now());
+      setShowPlacedModal(true);
+    } catch (e) {
+      console.warn('Persist failed', e);
+      setMessage('Failed to persist payment.');
+    }
+  };
+
+  // AutoClosePlaced removed (legacy) — auto redirect handled by effect above.
 
   // Removed dynamic QR generation; using static SVG asset instead
 
@@ -268,7 +337,7 @@ export default function Payment() {
       <CheckoutProgress currentStep={2} />
       <div className="bg-white rounded-xl border p-8 shadow-sm">
         <h1 className="text-2xl font-semibold mb-1">Payment</h1>
-        <p className="text-sm text-emerald-600 mb-6">Enjoy instant cashback with your HDFC Bank credit card.</p>
+        
         {/* Alerts */}
         {message && message.toLowerCase().includes('time ran out') && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-red-700 text-sm flex items-start justify-between">
@@ -534,13 +603,7 @@ export default function Payment() {
                         localStorage.setItem('order_summaries', JSON.stringify(all));
                       } catch { /* ignore */ }
 
-                      // Append to demo_orders for dashboard demo flows
-                      try {
-                        const saved = JSON.parse(localStorage.getItem('demo_orders') || '[]');
-                        const newId = orderId || `demo-${Date.now()}`;
-                        saved.push({ id: newId, items: order.items || [], totals: order.totals || {}, estimatedDays: order.estimatedDays || null, created: new Date().toISOString(), payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 } });
-                        localStorage.setItem('demo_orders', JSON.stringify(saved));
-                      } catch { /* ignore */ }
+                      // Removed demo_orders usage
 
                       clearCart();
                       setShowCodModal(false);
@@ -582,6 +645,11 @@ export default function Payment() {
                 onClick={() => { if (Date.now() - (codPlacedAt || 0) >= MIN_PLACED_VISIBLE_MS) { setShowPlacedModal(false); navigate('/store'); } }}
                 className="px-5 py-3 rounded-lg border border-slate-300 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
               >Continue Shopping</button>
+              <button
+                disabled={Date.now() - (codPlacedAt || 0) < MIN_PLACED_VISIBLE_MS}
+                onClick={() => { if (Date.now() - (codPlacedAt || 0) >= MIN_PLACED_VISIBLE_MS) { setShowPlacedModal(false); navigate(`/order-confirmation/${orderId}`); } }}
+                className="px-5 py-3 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              >Proceed to Confirmation</button>
             </div>
             <div className="mt-5 text-[11px] text-slate-500">Buttons unlock after 10s to prevent accidental closure.</div>
           </div>
@@ -615,7 +683,7 @@ export default function Payment() {
                         payments.push({ id: `pay-${Date.now()}`, orderId, method: 'cod', discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString() });
                         localStorage.setItem('payments', JSON.stringify(payments));
 
-                        // Mark order as placed in order_summaries (if present) and also append to demo_orders
+                        // Mark order as placed in order_summaries (if present)
                         try {
                           const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
                           const idx = all.findIndex(o => o.id === orderId);
@@ -628,12 +696,7 @@ export default function Payment() {
                           localStorage.setItem('order_summaries', JSON.stringify(all));
                         } catch { /* best-effort */ }
 
-                        try {
-                          const saved = JSON.parse(localStorage.getItem('demo_orders') || '[]');
-                          const newId = orderId || `demo-${Date.now()}`;
-                          saved.push({ id: newId, items: order.items || [], totals: order.totals || {}, estimatedDays: order.estimatedDays || null, created: new Date().toISOString(), payment: { method: 'cod', convenienceFee: totals.convenienceFee || 0 } });
-                          localStorage.setItem('demo_orders', JSON.stringify(saved));
-                        } catch { /* best-effort */ }
+                        // Removed demo_orders usage
 
                         // Clear cart and show placed overlay
                         clearCart();
@@ -703,25 +766,7 @@ export default function Payment() {
         </div>
       )}
 
-      {/* Placed overlay (congratulations) */}
-      {showPlacedModal && (
-        <div className="fixed inset-0 z-60 grid place-items-center">
-          <div className="absolute inset-0 backdrop-blur-sm bg-black/40" />
-          <div className="relative z-10 max-w-lg w-full mx-auto p-8 bg-white rounded-xl shadow-2xl text-center">
-            <h2 className="text-2xl font-semibold text-emerald-700 mb-4">Congratulations!</h2>
-            <p className="text-slate-700 mb-6">You have successfully placed the order.</p>
-            <div className="flex justify-center gap-3">
-              <button onClick={() => { setShowPlacedModal(false); navigate('/orders'); }} className="px-4 py-2 rounded bg-emerald-600 text-white">View Orders</button>
-              <button onClick={() => { setShowPlacedModal(false); navigate('/store'); }} className="px-4 py-2 rounded border">Continue Shopping</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Auto-close placed overlay after a short delay and redirect to orders */}
-      {showPlacedModal && (
-        <AutoClosePlaced onClose={() => { setShowPlacedModal(false); navigate('/orders'); }} />
-      )}
+      {/* Duplicate legacy placed overlay + auto close removed to prevent premature /orders redirect */}
 
       {/* Card Modal */}
       {showCardModal && (
@@ -769,36 +814,38 @@ export default function Payment() {
                 )}
                 {/* Supported Banks */}
                 <div className="pt-2">
-                  <div className="text-xs text-slate-600 mb-1">Supported banks</div>
+                  <div className="text-xs text-slate-600 mb-1">Supported banks (click to select)</div>
                   <div className="flex flex-wrap gap-2">
-                    {['HDFC Bank','SBI Bank','IDFC Bank','ICICI Bank','PNB','Bank of Baroda'].map(b=> (
-                      <span key={b} className="px-2 py-1 rounded border border-slate-300 text-xs">{b}</span>
-                    ))}
+                    {['HDFC Bank','SBI Bank','IDFC Bank','ICICI Bank','PNB','Bank of Baroda'].map(b => {
+                      const active = selectedBank === b;
+                      return (
+                        <button
+                          type="button"
+                          key={b}
+                          onClick={() => setSelectedBank(prev => prev === b ? null : b)}
+                          className={`px-2 py-1 rounded border text-xs transition ${active ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300 hover:border-slate-400 text-slate-700'}`}
+                        >{b}</button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="pt-3 flex gap-2">
                   <button
                     onClick={() => {
-                      // Basic minimal validation
                       if (!cardName || cardNumber.replace(/\s/g,'').length < 16 || cvv.length !== 3) {
                         setMessage('Please enter valid card details.');
                         return;
                       }
-                      try {
-                        const payments = JSON.parse(localStorage.getItem('payments') || '[]');
-                        payments.push({ id: `pay-${Date.now()}`, orderId, method: 'card', discount, convenienceFee: totals.convenienceFee || 0, totalPaid: totals.finalTotal, created: new Date().toISOString() });
-                        localStorage.setItem('payments', JSON.stringify(payments));
-                        setShowCardModal(false);
-                        setMessage('Payment successful.');
-                        setTimeout(() => navigate('/store'), 1200);
-                      } catch {
-                        setMessage('Failed to persist payment.');
-                      }
+                      if (!selectedBank) { setMessage('Select a bank first.'); return; }
+                      // Show OTP modal instead of immediate payment
+                      setShowCardModal(false);
+                      setPendingPaymentKind('card');
+                      setOtpDigits(['','','','']);
+                      setOtpTimeLeft(OTP_DURATION);
+                      setShowOtpModal(true);
                     }}
                     className="px-4 py-2 rounded bg-indigo-600 text-white text-sm"
-                  >
-                    Pay Now
-                  </button>
+                  >Pay & Verify OTP</button>
                   <button onClick={()=>setShowCardModal(false)} className="px-4 py-2 rounded border border-slate-300 text-sm">Cancel</button>
                 </div>
               </div>
@@ -911,37 +958,15 @@ export default function Payment() {
                         setMessage('Please enter valid card details.');
                         return;
                       }
-                      try {
-                        const payments = JSON.parse(localStorage.getItem('payments') || '[]');
-                        payments.push({
-                          id: `pay-${Date.now()}`,
-                          orderId,
-                          method: 'emi',
-                          discount,
-                          convenienceFee: totals.convenienceFee || 0,
-                          totalPaid: totals.finalTotal,
-                          emi: {
-                            id: selectedEmi.id,
-                            months: selectedEmi.months,
-                            apr: selectedEmi.apr,
-                            perMonth: selectedEmi.perMonth,
-                            totalPayable: selectedEmi.totalPayable,
-                            interest: selectedEmi.interest,
-                          },
-                          created: new Date().toISOString()
-                        });
-                        localStorage.setItem('payments', JSON.stringify(payments));
-                        setShowEmiSetupModal(false);
-                        setMessage('EMI set up successful.');
-                        setTimeout(() => navigate('/store'), 1200);
-                      } catch {
-                        setMessage('Failed to persist payment.');
-                      }
+                      if (!selectedBank) { setMessage('Select a bank first.'); return; }
+                      setShowEmiSetupModal(false);
+                      setPendingPaymentKind('emi');
+                      setOtpDigits(['','','','']);
+                      setOtpTimeLeft(OTP_DURATION);
+                      setShowOtpModal(true);
                     }}
                     className="px-4 py-2 rounded bg-indigo-600 text-white text-sm"
-                  >
-                    Set up EMI
-                  </button>
+                  >Set up EMI & Verify OTP</button>
                   <button onClick={()=>setShowEmiSetupModal(false)} className="px-4 py-2 rounded border border-slate-300 text-sm">Cancel</button>
                 </div>
               </div>
@@ -950,6 +975,64 @@ export default function Payment() {
         </div>
       )}
 
+      {/* OTP Verification Modal */}
+      {showOtpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={()=>setShowOtpModal(false)} />
+          <div className="relative z-10 w-full max-w-sm mx-auto">
+            <div className="relative bg-white rounded-xl shadow-lg border p-6 overflow-hidden">
+              <div
+                className="absolute inset-0 rounded-xl pointer-events-none transition-[background] duration-200"
+                style={{
+                  padding:'2px',
+                  background: (() => {
+                    const remainingFrac = 1 - otpProgress; // portion still green
+                    const deg = remainingFrac * 360;
+                    return `conic-gradient(#10b981 0deg ${deg}deg, #e2e8f0 ${deg}deg 360deg)`;
+                  })()
+                }}
+              />
+              <div className="relative">
+                <h3 className="text-lg font-semibold mb-2">Verify OTP</h3>
+                <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+                  Please enter the OTP you have received on your phone number <span className="font-medium text-slate-800">{maskedPhoneForBank}</span><br />
+                  registered with <span className="font-semibold text-emerald-600">{selectedBank || 'selected bank'}</span>.
+                </p>
+                <div className="flex gap-3 justify-center mb-5">
+                  {otpDigits.map((d, idx) => (
+                    <div key={idx} className="relative">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={d}
+                        onChange={(e)=>{
+                          const ch = (e.target.value||'').replace(/\D/g,'').slice(-1);
+                          const next=[...otpDigits]; next[idx]=ch; setOtpDigits(next);
+                        }}
+                        className="w-12 h-12 text-center border rounded-md text-transparent bg-white caret-emerald-600 focus:border-emerald-500"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-lg font-semibold text-slate-700">{d? '*':''}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={handleOtpConfirm}
+                    disabled={otpTimeLeft<=0}
+                    className="px-4 py-2 rounded bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+                  >Confirm OTP</button>
+                  <button
+                    onClick={()=>{ setShowOtpModal(false); setPendingPaymentKind(null); }}
+                    className="px-4 py-2 rounded border border-slate-300 text-sm"
+                  >Cancel</button>
+                </div>
+                {otpTimeLeft<=0 && <div className="mt-3 text-xs text-red-600 text-center">OTP expired. Close and retry.</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
     </div>
   );

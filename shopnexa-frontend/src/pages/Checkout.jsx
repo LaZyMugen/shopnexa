@@ -45,41 +45,57 @@ export default function Checkout() {
   const placeOrder = async () => {
     if (items.length === 0) return;
     setLoading(true);
-    // Include shipping breakdown using scaled shipping costs
+    setMessage('');
+    // Prepare summary payload
     const payload = { items, totals: { items: computed.itemsSubtotal, shipping: computed.shippingTotal, total: computed.total }, estimatedDays: computed.estimatedDays };
+    // Prepare server decrement items (numeric product IDs only)
+    const serverItems = items.filter(it => /^(\d+)$/.test(String(it.id))).map(it => ({ id: Number(it.id), qty: it.qty }));
+    let decrementResult = null;
     try {
-      const res = await api.post('/orders/demo', payload);
-      // Attempt to derive order id from response; fallback to timestamp
-      const orderId = res?.data?.orderId || `demo-${Date.now()}`;
-      // Persist summary for order summary page
+      if (serverItems.length) {
+        // Attempt to decrement stock on backend for server-managed products
+        const resDec = await api.post('/products/bulk-decrement', { items: serverItems });
+        decrementResult = resDec?.data;
+        if (Array.isArray(decrementResult?.skipped) && decrementResult.skipped.length) {
+          // If any skipped due to insufficient stock, abort order placement for clarity
+          const insufficient = decrementResult.skipped.find(s => s.reason === 'Insufficient stock');
+          if (insufficient) {
+            setMessage('Some items exceeded available stock. Adjust quantities and try again.');
+            setLoading(false);
+            return;
+          }
+        }
+      }
+      // Locally decrement stock for locally stored products (non-numeric IDs)
+      try {
+        const localProducts = JSON.parse(localStorage.getItem('products') || '[]');
+        let changed = false;
+        for (const it of items) {
+          if (!/^(\d+)$/.test(String(it.id))) {
+            const p = localProducts.find(lp => lp.id === it.id);
+            if (p && isFinite(p.stock)) {
+              p.stock = Math.max(0, Number(p.stock) - (it.qty || 0));
+              changed = true;
+            }
+          }
+        }
+        if (changed) {
+          localStorage.setItem('products', JSON.stringify(localProducts));
+        }
+      } catch (e) { console.warn('local stock decrement failed', e); }
+
+      // Generate order id (timestamp based; future could use backend order id when integrated)
+      const orderId = `order-${Date.now()}`;
       try {
         const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
-        all.push({ id: orderId, items, totals: payload.totals, estimatedDays: payload.estimatedDays, created: new Date().toISOString() });
+        all.push({ id: orderId, items, totals: payload.totals, estimatedDays: payload.estimatedDays, created: new Date().toISOString(), stockUpdates: decrementResult });
         localStorage.setItem('order_summaries', JSON.stringify(all));
       } catch (err) { console.warn('saving order_summaries failed', err); }
-  // Navigate immediately to avoid empty-cart flash; clear cart after navigation (microtask)
-  navigate(`/order-summary/${orderId}`);
-  setTimeout(() => { clearCart(); }, 0);
+      navigate(`/order-summary/${orderId}`);
+      setTimeout(() => { clearCart(); }, 0);
     } catch (err) {
-      console.warn('place order demo failed', err);
-      // fallback: save to localStorage
-      try {
-        const saved = JSON.parse(localStorage.getItem('demo_orders') || '[]');
-        saved.push({ id: `demo-${Date.now()}`, items, totals: payload.totals, estimatedDays: computed.estimatedDays, created: new Date().toISOString() });
-        localStorage.setItem('demo_orders', JSON.stringify(saved));
-        const fallbackId = saved[saved.length - 1].id;
-        // Also mirror into order_summaries for summary page
-        try {
-          const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
-          all.push({ id: fallbackId, items, totals: payload.totals, estimatedDays: computed.estimatedDays, created: new Date().toISOString() });
-          localStorage.setItem('order_summaries', JSON.stringify(all));
-        } catch (err) { console.warn('saving order_summaries failed', err); }
-        navigate(`/order-summary/${fallbackId}`);
-        setTimeout(() => { clearCart(); }, 0);
-      } catch (err) {
-        console.warn('fallback place order failed', err);
-        setMessage('Failed to place order.');
-      }
+      console.warn('placeOrder failed', err);
+      setMessage('Failed to place order.');
     } finally {
       setLoading(false);
     }

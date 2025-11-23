@@ -48,6 +48,26 @@ export default function OrderSummary() {
 
   const selectAddress = (id) => {
     setSelectedAddrId(id);
+    // Persist the chosen address onto this order so downstream pages (Payment/Tracking) can read it
+    try {
+      const chosen = addresses.find(a => a.id === id);
+      if (chosen && order) {
+        const line = [
+          chosen.name,
+          chosen.line1,
+          [chosen.city, chosen.state].filter(Boolean).join(', '),
+          [chosen.postal, chosen.country].filter(Boolean).join(' ')
+        ].filter(Boolean).join(', ');
+        const all = JSON.parse(localStorage.getItem('order_summaries') || '[]');
+        const idx = all.findIndex(o => o.id === order.id);
+        if (idx >= 0) {
+          all[idx] = { ...all[idx], shippingAddress: line, shippingAddressObj: chosen };
+          localStorage.setItem('order_summaries', JSON.stringify(all));
+          // reflect immediately in UI
+          setOrder(all[idx]);
+        }
+      }
+    } catch (e) { /* best-effort persist */ }
     setSavedMsg('Address selected');
     setTimeout(() => setSavedMsg(''), 1500);
   };

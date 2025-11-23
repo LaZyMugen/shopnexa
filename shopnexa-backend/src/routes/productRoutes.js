@@ -4,7 +4,8 @@ import {
   getAllProducts,
   getProductById,
   updateProduct,
-  deleteProduct
+  deleteProduct,
+  bulkDecrementStock
 } from "../controllers/productController.js";
 
 const router = express.Router();
@@ -15,5 +16,8 @@ router.get("/", getAllProducts);
 router.get("/:id", getProductById);
 router.put("/:id", updateProduct);
 router.delete("/:id", deleteProduct);
+
+// Bulk stock decrement (public demo endpoint)
+router.post('/bulk-decrement', bulkDecrementStock);
 
 export default router;

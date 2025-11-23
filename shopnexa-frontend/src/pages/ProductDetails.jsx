@@ -35,6 +35,54 @@ function StarBar({ value, size = 18 }) {
   );
 }
 
+// Offline helpers
+function hashString(str){ let h=0; for(let i=0;i<String(str).length;i++) h=(h*31+String(str).charCodeAt(i))&0xffffffff; return h>>>0; }
+function genRetailerName(seed, category){
+  const base = hashString(String(seed||'seed'));
+  const firstNames = ['Priya','Rohan','Neha','Arjun','Simran','Vivek','Anita','Rahul','Saanvi','Ishaan','Kavya','Aarav','Meera','Kabir','Ritika'];
+  const initials = ['RK','MK','SS','AK','PN','VK','RS','JK','PK','DN','PM','RG','KV','AM','NS'];
+  const cat = String(category||'').toLowerCase();
+  const suffixGeneric=['General Store','Bazaar','Super Mart','Traders','Stores'];
+  const suffixElectronics=['Electronics','Tech Mart','Appliances','Mobile Hub'];
+  const suffixFashion=['Fashion Centre','Textiles','Boutique','Clothing Co'];
+  const suffixHome=['Home Store','Home Essentials','Furnishings','Decor Studio'];
+  const suffixKitchen=['Home & Kitchen','Kitchen Ware'];
+  const suffixSports=['Sports & Fitness','Sport Shop'];
+  const suffixKids=['Kids Corner','Toy House'];
+  let suffixPool=suffixGeneric;
+  if(cat.includes('elect')) suffixPool=suffixElectronics; else if(cat.includes('apparel')||cat.includes('fashion')||cat.includes('cloth')) suffixPool=suffixFashion; else if(cat.includes('home')||cat.includes('decor')||cat.includes('furniture')) suffixPool=suffixHome; else if(cat.includes('kitchen')) suffixPool=suffixKitchen; else if(cat.includes('sport')) suffixPool=suffixSports; else if(cat.includes('kid')||cat.includes('toy')) suffixPool=suffixKids;
+  const style = base % 2;
+  const namePart = style===0 ? firstNames[base % firstNames.length] : initials[base % initials.length];
+  const suffix = suffixPool[(base>>>4) % suffixPool.length];
+  return `${namePart} ${suffix}`;
+}
+function genPhone(seed) {
+  let h = 0; const s = String(seed||'seed');
+  for (let i=0;i<s.length;i++) h = (h*131 + s.charCodeAt(i)) & 0xffffffff;
+  const starts = ['6','7','8','9'];
+  const start = starts[Math.abs(h)%starts.length];
+  let x = Math.abs(h)||1; let digits = start;
+  for (let i=0;i<9;i++){ x=(x*1664525+1013904223)&0xffffffff; digits += String(Math.abs(x)%10); }
+  return `+91 ${digits}`;
+}
+function formatDateRangeForGoogle(start, end){
+  const pad=(n)=>String(n).padStart(2,'0');
+  const u=(d)=>`${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+  return `${u(start)}/${u(end)}`;
+}
+function buildIcs(summary, description, start, end){
+  const pad=(n)=>String(n).padStart(2,'0');
+  const fmt=(d)=>`${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+  const uid = `shopnexa-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Shopnexa//Offline Order Reminder//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+    `UID:${uid}`,`DTSTAMP:${fmt(new Date())}`,`DTSTART:${fmt(start)}`,`DTEND:${fmt(end)}`,
+    `SUMMARY:${(summary||'').replace(/\r?\n/g,' ')}`,
+    `DESCRIPTION:${(description||'').replace(/\r?\n/g,' ')}`,
+    'END:VEVENT','END:VCALENDAR'
+  ].join('\r\n');
+}
+
 export default function ProductDetails() {
   const { id } = useParams();
   const [product, setProduct] = useState(null);
@@ -50,6 +98,7 @@ export default function ProductDetails() {
   const [retailers, setRetailers] = useState([]);
   const [chosenRetailerId, setChosenRetailerId] = useState(null);
   const { addItem } = useCart();
+  const [offlineOpen, setOfflineOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -311,6 +360,46 @@ export default function ProductDetails() {
               }}
               className="px-4 py-2 rounded bg-slate-900 text-white"
             >Add to cart</button>
+            <button
+              onClick={() => setOfflineOpen(v=>!v)}
+              className="ml-2 px-4 py-2 rounded border border-slate-300 bg-white text-slate-800"
+            >Click here for offline order</button>
+            {offlineOpen && (()=>{
+              const r = (retailers || []).find(x=>x.id===chosenRetailerId) || (retailers||[])[0] || null;
+              const retailerName = r?.name || genRetailerName(`${product?.id||id}:${product?.category||product?.name||''}`, product?.category);
+              const retailerCity = product?.region || 'Bengaluru';
+              const retailerPhone = genPhone(`${product?.id||id}:${retailerName}`);
+              const start = (()=>{ const d=new Date(); d.setDate(d.getDate()+1); d.setHours(10,0,0,0); return d; })();
+              const end = new Date(start.getTime()+30*60*1000);
+              const gcal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent('Call retailer about offline order: ' + (product?.name||'Item'))}&details=${encodeURIComponent(`Retailer: ${retailerName}\nCity: ${retailerCity}\nPhone: ${retailerPhone}`)}&dates=${formatDateRangeForGoogle(start,end)}`;
+              return (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm">
+                  <div className="font-medium text-slate-800">Contact retailer</div>
+                  <div className="mt-1 text-slate-700">Name: <span className="font-semibold">{retailerName}</span></div>
+                  <div className="text-slate-700">City: <span className="font-semibold">{retailerCity}</span></div>
+                  <div className="text-slate-700">Phone: <span className="font-semibold">{retailerPhone}</span></div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a href={gcal} target="_blank" rel="noreferrer" className="px-3 py-2 rounded bg-emerald-600 text-white text-xs">Add reminder (Google)</a>
+                    <button
+                      className="px-3 py-2 rounded border border-slate-300 text-xs"
+                      onClick={()=>{
+                        const ics = buildIcs(
+                          `Call retailer: ${(product?.name||'Item')}`,
+                          `Retailer: ${retailerName} | City: ${retailerCity} | Phone: ${retailerPhone}`,
+                          new Date(start), new Date(end)
+                        );
+                        const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = `offline-order-reminder-${String(id).replace(/[^a-zA-Z0-9_-]/g,'')}.ics`;
+                        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+                      }}
+                    >Download .ics</button>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500">We’ll remind you to contact the retailer for offline delivery.</div>
+                </div>
+              );
+            })()}
           </div>
 
           <div className="mt-6">
@@ -473,7 +562,7 @@ function RetailerList({ location, retailers, onChoose, onUpdateRetailers, chosen
 
   // Ensure uniqueness of etaDays across shippers by incrementing duplicates deterministically
   const used = new Set();
-  enriched = enriched.map((r, idx) => {
+  enriched = enriched.map((r) => {
     let d = r.etaDays;
     if (d == null) {
       return { ...r, etaLabel: 'ETA: —', expectedLabel: '' };

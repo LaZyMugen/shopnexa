@@ -1,33 +1,53 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useCart } from "../context/cartContext";
 import { useAuth } from "../context/authContext";
 
 export default function Profile() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { addItem, clearCart } = useCart();
-  const [profile, setProfile] = useState({ name: "", age: "", location: "" });
+  const [profile, setProfile] = useState({ name: "Shashwat Sahoo", age: "20", location: "Bits Pilani Hyderabad Campus" });
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState("");
-  const [ordersKey, setOrdersKey] = useState(0);
+  const [orders, setOrders] = useState([]); // real placed orders from order_summaries
+  const [productIndex, setProductIndex] = useState({}); // id -> product for image fallback
+  const placeholderDataUri = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><rect width="100%" height="100%" fill="#e5e7eb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="10" fill="#64748b">IMG</text></svg>');
+
+  // Load placed orders from order_summaries (remove all demo_orders usage)
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem('order_summaries') || '[]');
+      const normalized = Array.isArray(raw) ? raw : [];
+      // Only include orders that are actually placed (status === 'placed') if status exists
+      const placed = normalized.filter(o => !o.status || o.status === 'placed');
+      placed.sort((a,b) => new Date(b.placedAt || b.created || 0) - new Date(a.placedAt || a.created || 0));
+      setOrders(placed);
+    } catch {
+      setOrders([]);
+    }
+  }, []);
+
+  // Limit display (e.g. last 12)
+  const recentOrders = useMemo(() => orders.slice(0, 12), [orders]);
+
+  // Build a quick lookup of products for image fallback
+  useEffect(() => {
+    try {
+      const prods = JSON.parse(localStorage.getItem('products') || '[]');
+      const map = {};
+      if (Array.isArray(prods)) {
+        for (const p of prods) map[p.id] = p;
+      }
+      setProductIndex(map);
+    } catch { setProductIndex({}); }
+  }, []);
 
   // Load/save profile details from localStorage (demo)
   useEffect(() => {
-    try {
-      // Initialize/clear profile to requested defaults:
-      // - Name: first part of user's email (before @)
-      // - Age: 20
-      // - Location: Bits Pilani Hyderabad Campus
-      const email = user?.email || '';
-      const nameFromEmail = email.includes('@') ? email.split('@')[0] : email;
-      const defaults = { name: nameFromEmail || '', age: '20', location: 'Bits Pilani Hyderabad Campus' };
-      // Apply defaults and persist them so the UI shows the cleared values immediately
-      setProfile(defaults);
-      try { localStorage.setItem('user_profile', JSON.stringify(defaults)); } catch (e) { /* ignore storage errors */ }
-    } catch (err) {
-      console.warn('Failed to initialize user_profile defaults', err);
-    }
+    // Force profile name override irrespective of stored value.
+    const overridden = { name: "Shashwat Sahoo", age: profile.age, location: profile.location };
+    setProfile(overridden);
+    try { localStorage.setItem('user_profile', JSON.stringify(overridden)); } catch {/* ignore */}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const saveProfile = () => {
@@ -41,38 +61,6 @@ export default function Profile() {
     setTimeout(() => setMessage(""), 1500);
   };
 
-  const orders = useMemo(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("demo_orders") || "[]");
-      // newest first
-      return saved.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
-    } catch {
-      console.warn('Failed to read demo_orders from localStorage');
-      return [];
-    }
-  }, [ordersKey]);
-
-  const clearAllOrders = () => {
-    try {
-      if (!window.confirm('Clear all past demo orders? This cannot be undone.')) return;
-      localStorage.removeItem('demo_orders');
-      setOrdersKey(k => k + 1);
-      setMessage('All past orders cleared');
-      setTimeout(() => setMessage(''), 2000);
-    } catch (err) {
-      console.warn('Failed to clear demo_orders', err);
-      setMessage('Failed to clear orders');
-      setTimeout(() => setMessage(''), 2000);
-    }
-  };
-
-  const repeatOrder = (order) => {
-    if (!order?.items?.length) return;
-    order.items.forEach((it) => addItem(it, Math.max(1, it.qty || 1)));
-    setMessage("Order items added to cart");
-    setTimeout(() => setMessage(""), 2000);
-    navigate("/checkout");
-  };
 
   return (
     <div className="profile-page relative min-h-screen text-slate-900 dark:text-white p-6" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
@@ -116,58 +104,98 @@ export default function Profile() {
           {message && <div className="mt-3 text-sm text-emerald-600 dark:text-emerald-300">{message}</div>}
         </div>
 
-        {/* Orders history */}
-  <div className="rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 ring-1 ring-white/30 shadow p-5 text-slate-900 dark:text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">Recent orders</div>
-            <div className="flex items-center gap-2">
-              <button onClick={clearAllOrders} className="px-2 py-1 rounded bg-red-600 text-white text-sm">Clear orders</button>
-            </div>
-          </div>
-          {orders.length === 0 ? (
-            <div className="text-sm text-slate-600 dark:text-white/70">No orders yet. Explore the <button onClick={()=>navigate('/store')} className="underline">store</button>.</div>
-          ) : (
-            <div className="space-y-4">
-              {orders.map((o) => (
-                <div key={o.id} className="rounded-xl border border-white/15 p-4 bg-white/5">
-                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-                    {/* Left: order meta and subtext */}
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <div className="font-medium text-slate-900 dark:text-white">Order #{o.id || '—'}</div>
-                        <div className="text-sm text-slate-600 dark:text-white/70">{o.created ? new Date(o.created).toLocaleString() : ''}</div>
-                      </div>
-                      <div className="text-sm text-slate-700 dark:text-white/80 mt-1">Total: ₹{Number(o?.totals?.total || 0).toFixed(2)} • Items: {o?.items?.reduce((s, it)=>s + (it.qty || 0), 0)}</div>
-                      {/* subtext details */}
-                      <div className="mt-2 text-xs text-slate-600 dark:text-white/70 space-y-1">
-                        {o.items?.slice(0,3).map((it) => (
-                          <div key={`${o.id}-${it.id}`}>{it.name} × {it.qty} <span className="text-slate-500 dark:text-white/50">{it.retailer?.name ? `• ${it.retailer.name}` : ''}</span></div>
-                        ))}
-                        {o.items?.length > 3 && (
-                          <div>+{o.items.length - 3} more…</div>
-                        )}
-                        {Number.isFinite(o.estimatedDays) && (
-                          <div>Last ETA: {o.estimatedDays} day(s)</div>
-                        )}
-                      </div>
-                    </div>
+        {/* Quick link to latest confirmation/tracking */}
+        <div className="mb-6">
+          <button
+            onClick={() => {
+              const latestId = orders?.[0]?.id;
+              if (latestId) {
+                navigate(`/order-confirmation/${latestId}`);
+              } else {
+                navigate('/orders');
+              }
+            }}
+            className="w-full px-4 py-3 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500"
+          >
+            view confirmed live order and tracking details
+          </button>
+        </div>
 
-                    {/* Right: big thumbnails and action */}
-                    <div className="flex flex-col items-end gap-3">
-                      <div className="flex -space-x-2">
-                        {(o.items||[]).slice(0,4).map((it, idx) => (
-                          <img key={idx} src={it.image_url} alt={it.name} className="w-20 h-20 md:w-24 md:h-24 rounded-md border border-white/30 object-cover bg-white" onError={(e)=>{e.currentTarget.style.visibility='hidden';}} />
-                        ))}
-                        {o.items?.length > 4 && (
-                          <div className="w-20 h-20 md:w-24 md:h-24 rounded-md border border-white/30 bg-white/70 text-slate-800 flex items-center justify-center text-sm">+{o.items.length-4}</div>
-                        )}
-                      </div>
-                      <button onClick={()=>repeatOrder(o)} className="px-3 py-1.5 rounded bg-gradient-to-r from-fuchsia-600 to-pink-500 text-white text-sm">Repeat order</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+        {/* Placed Orders (with product images) */}
+        <div className="rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 ring-1 ring-white/30 shadow p-5 mb-6 text-slate-900 dark:text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">Your Orders</div>
+              <div className="text-xs text-slate-600 dark:text-white/60">Orders you've placed (latest first)</div>
             </div>
+            <button
+              onClick={() => navigate('/orders')}
+              className="px-3 py-1.5 rounded bg-indigo-600 text-white text-sm"
+            >View All</button>
+          </div>
+          {recentOrders.length === 0 ? (
+            <div className="text-sm text-slate-600 dark:text-white/60">No orders yet. Place an order to see it here.</div>
+          ) : (
+            <ul className="space-y-3">
+              {recentOrders.map(o => {
+                const created = o.placedAt || o.created || null;
+                const total = typeof o.total === 'number' ? o.total : (o.totals?.finalTotal || o.totals?.items || 0);
+                const status = o.status || 'placed';
+                const items = Array.isArray(o.items) ? o.items : [];
+                return (
+                  <li key={o.id} className="p-4 rounded-xl bg-white/5 border border-white/10 flex flex-col md:flex-row gap-4">
+                    <div className="flex -space-x-2 overflow-hidden">
+                      {items.slice(0,4).map((it, idx) => {
+                        const prod = productIndex[it.id];
+                        const img = it.image_url || it.imageBase64 || it.image || it.img || it.thumbnail || prod?.imageBase64 || prod?.image_url || placeholderDataUri;
+                        const name = it.name || it.title || `Item ${idx+1}`;
+                        return (
+                          <img
+                            key={idx}
+                            src={img}
+                            alt={name}
+                            title={name}
+                            className="w-14 h-14 object-cover rounded-lg ring-2 ring-white/20 bg-slate-200 dark:bg-slate-700"
+                            onError={(e)=>{ e.currentTarget.src = placeholderDataUri; }}
+                          />
+                        );
+                      })}
+                      {items.length === 0 && (
+                        <div className="w-14 h-14 flex items-center justify-center text-xs text-slate-500 bg-slate-200 dark:bg-slate-700 rounded-lg">No Img</div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">Order #{o.id}</div>
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-800 capitalize">{status}</span>
+                      </div>
+                      <div className="text-xs text-slate-600 dark:text-white/60 mb-1">
+                        {created ? new Date(created).toLocaleString() : 'Date unknown'} · {items.length} item(s)
+                      </div>
+                      <div className="text-sm font-medium text-emerald-600">₹{total.toFixed(2)}</div>
+                      {items.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1 text-[11px] text-slate-500 dark:text-white/50">
+                          {items.slice(0,6).map((it, i) => (
+                            <span key={i} className="px-2 py-0.5 rounded bg-white/10 border border-white/10 truncate max-w-[120px]" title={it.name || it.title}>{it.name || it.title || 'Item'}</span>
+                          ))}
+                          {items.length > 6 && <span className="px-2 py-0.5 rounded bg-white/10 border border-white/10">+{items.length - 6} more</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-end md:items-center gap-2 md:flex-col md:justify-between">
+                      <button
+                        onClick={() => navigate(`/order-confirmation/${o.id}`)}
+                        className="px-3 py-1.5 rounded bg-indigo-600 text-white text-xs font-medium"
+                      >Details</button>
+                      <button
+                        onClick={() => navigate('/store')}
+                        className="px-3 py-1.5 rounded border border-white/20 text-xs font-medium"
+                      >Shop Again</button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       </div>

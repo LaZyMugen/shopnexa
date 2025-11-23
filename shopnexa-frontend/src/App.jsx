@@ -27,8 +27,10 @@ import Settings from "./pages/Settings";
 import Landing from "./pages/Landing";
 import OrderSummary from "./pages/OrderSummary";
 import Payment from "./pages/Payment";
+import OrderConfirmation from "./pages/OrderConfirmation";
 import OfflineOrders from "./pages/OfflineOrders";
 import OrderTracking from "./pages/OrderTracking";
+import TrackOrder from "./pages/TrackOrder";
 import ShippingPanel from "./pages/ShippingPanel";
 
 
@@ -120,7 +122,8 @@ function App() {
 
   {/* Root → signup for unauthenticated users (logged-in users will be routed by PublicRoute) */}
   <Route path="/" element={<Navigate to="/signup" replace />} />
-  <Route path="/landing" element={<ProtectedRoute><Landing /></ProtectedRoute>} />
+  {/* Make landing public so confirmation page can navigate without auth redirect */}
+  <Route path="/landing" element={<Landing />} />
 
         {/* Login */}
         <Route
@@ -167,6 +170,10 @@ function App() {
     <Route path="/checkout" element={<Checkout />} />
   <Route path="/order-summary/:orderId" element={<OrderSummary />} />
   <Route path="/payment/:orderId" element={<Payment />} />
+  {/* Order confirmation made public to avoid auth redirect after payment */}
+  <Route path="/order-confirmation/:orderId" element={<OrderConfirmation />} />
+  {/* Public order tracking page for customers */}
+  <Route path="/track-order/:orderId" element={<TrackOrder />} />
     <Route path="/profile" element={<Profile />} />
 
         {/* Temporary auth test */}

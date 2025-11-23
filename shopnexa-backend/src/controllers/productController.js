@@ -122,3 +122,40 @@ export const deleteProduct = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// Bulk decrement stock (demo/public endpoint)
+// Expects body: { items: [ { id|product_id, qty|quantity } ] }
+// For each item we validate availability and then decrement.
+// Returns: { success:true, updated:[{id, oldStock, newStock}], skipped:[{id, reason}] }
+export const bulkDecrementStock = async (req, res) => {
+  try {
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!rawItems.length) return res.status(400).json({ success:false, error:'No items provided' });
+    // Normalise shape
+    const norm = rawItems.map(it => ({
+      id: Number(it.product_id != null ? it.product_id : it.id),
+      qty: Math.max(parseInt(it.quantity != null ? it.quantity : it.qty, 10) || 1, 1)
+    })).filter(i => Number.isFinite(i.id));
+    if (!norm.length) return res.status(400).json({ success:false, error:'No valid items' });
+    const ids = norm.map(i => i.id);
+    const { data: products, error: pErr } = await supabase
+      .from('products')
+      .select('id, stock')
+      .in('id', ids);
+    if (pErr) throw pErr;
+    const byId = Object.fromEntries(products.map(p => [p.id, p]));
+    const updated = []; const skipped = [];
+    for (const it of norm) {
+      const prod = byId[it.id];
+      if (!prod) { skipped.push({ id: it.id, reason:'Not found' }); continue; }
+      if (prod.stock < it.qty) { skipped.push({ id: it.id, reason:'Insufficient stock' }); continue; }
+      const newStock = prod.stock - it.qty;
+      const { error: uErr } = await supabase.from('products').update({ stock: newStock }).eq('id', it.id);
+      if (uErr) { skipped.push({ id: it.id, reason: uErr.message || 'Update failed' }); continue; }
+      updated.push({ id: it.id, oldStock: prod.stock, newStock });
+    }
+    return res.status(200).json({ success:true, updated, skipped });
+  } catch (e) {
+    return res.status(500).json({ success:false, error: e.message || String(e) });
+  }
+};
